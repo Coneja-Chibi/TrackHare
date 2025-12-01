@@ -14,9 +14,11 @@ import {
     tokenizers,
     getTextTokens,
     getFriendlyTokenizerName,
+    getTokenizerBestMatch,
     guesstimate,
     CHARACTERS_PER_TOKEN_RATIO,
 } from '../../../../tokenizers.js';
+import { main_api } from '../../../../script.js';
 
 /**
  * Get promptManager dynamically (it's null at load time, created later by ST)
@@ -76,10 +78,37 @@ let lastPromptManagerData = null;
 
 /**
  * Currently selected tokenizer for display/recalculation
- * null = use ST's default, otherwise a tokenizer ID from tokenizers enum
+ * null = use original tokenizer, otherwise a tokenizer ID from tokenizers enum
  * @type {number|null}
  */
 let selectedTokenizer = null;
+
+/**
+ * The tokenizer that was used for the original itemization
+ * Captured at generation time so we can show/restore it
+ * @type {{id: number, name: string}|null}
+ */
+let originalTokenizer = null;
+
+/**
+ * Get the current ST tokenizer info (what ST is actually using)
+ * @returns {{id: number, name: string}}
+ */
+function getCurrentSTTokenizer() {
+    try {
+        const { tokenizerName, tokenizerId } = getFriendlyTokenizerName(main_api);
+        return { id: tokenizerId, name: tokenizerName };
+    } catch (e) {
+        // Fallback - try to figure it out from best match
+        try {
+            const bestMatch = getTokenizerBestMatch(main_api);
+            const found = AVAILABLE_TOKENIZERS.find(t => t.id === bestMatch);
+            return { id: bestMatch, name: found?.name || 'Unknown' };
+        } catch {
+            return { id: tokenizers.NONE, name: 'Estimate' };
+        }
+    }
+}
 
 /**
  * Available tokenizers for the dropdown
@@ -184,21 +213,35 @@ async function recalculateTokenCounts(tokenizerType) {
 }
 
 /**
- * Get the name of the currently selected tokenizer
+ * Get the name of the currently active tokenizer (for display)
  * @returns {string}
  */
 function getSelectedTokenizerName() {
     if (selectedTokenizer === null) {
-        // Get ST's current tokenizer name
-        try {
-            const { tokenizerName } = getFriendlyTokenizerName();
-            return `ST Default (${tokenizerName})`;
-        } catch {
-            return 'ST Default';
+        // Show the original tokenizer that was used
+        if (originalTokenizer) {
+            return originalTokenizer.name;
         }
+        // Fallback to current ST tokenizer
+        const current = getCurrentSTTokenizer();
+        return current.name;
     }
     const found = AVAILABLE_TOKENIZERS.find(t => t.id === selectedTokenizer);
     return found?.name || 'Unknown';
+}
+
+/**
+ * Get the currently active tokenizer ID
+ * @returns {number}
+ */
+function getActiveTokenizerId() {
+    if (selectedTokenizer !== null) {
+        return selectedTokenizer;
+    }
+    if (originalTokenizer) {
+        return originalTokenizer.id;
+    }
+    return getCurrentSTTokenizer().id;
 }
 
 /**
@@ -840,6 +883,11 @@ async function processChatCompletion(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
+    // Capture the tokenizer being used for this generation
+    originalTokenizer = getCurrentSTTokenizer();
+    selectedTokenizer = null; // Reset to show original
+    console.debug('[Carrot Compass] Captured original tokenizer:', originalTokenizer.name, '(id:', originalTokenizer.id, ')');
+
     const context = getContext();
     const countTokens = context?.getTokenCountAsync || (t => Math.ceil(t.length / 4));
 
@@ -848,6 +896,7 @@ async function processChatCompletion(eventData) {
         sections: [],
         totalMarkedTokens: 0,
         rawMessages: chat.length,
+        originalTokenizer: { ...originalTokenizer }, // Store in itemization too
     };
 
     // First, add World Info entries directly from uiState.currentEntryList
@@ -1498,12 +1547,8 @@ export function showTokenItemizer() {
         min-width: 140px;
     `;
 
-    // Add "ST Default" option
-    const defaultOption = document.createElement('option');
-    defaultOption.value = 'default';
-    defaultOption.textContent = getSelectedTokenizerName();
-    if (selectedTokenizer === null) defaultOption.selected = true;
-    tokenizerSelect.appendChild(defaultOption);
+    // Determine the currently active tokenizer ID
+    const activeTokenizerId = getActiveTokenizerId();
 
     // Add tokenizers grouped by family
     const groups = {};
@@ -1519,8 +1564,10 @@ export function showTokenItemizer() {
         for (const tok of toks) {
             const option = document.createElement('option');
             option.value = tok.id.toString();
-            option.textContent = tok.name;
-            if (selectedTokenizer === tok.id) option.selected = true;
+            // Mark the original tokenizer
+            const isOriginal = originalTokenizer && tok.id === originalTokenizer.id;
+            option.textContent = isOriginal ? `${tok.name} (original)` : tok.name;
+            if (tok.id === activeTokenizerId) option.selected = true;
             optgroup.appendChild(option);
         }
         tokenizerSelect.appendChild(optgroup);
@@ -1529,7 +1576,7 @@ export function showTokenItemizer() {
     // Handle tokenizer change
     tokenizerSelect.addEventListener('change', async () => {
         const value = tokenizerSelect.value;
-        const newTokenizer = value === 'default' ? null : parseInt(value, 10);
+        const newTokenizer = parseInt(value, 10);
 
         // Show loading state
         tokenizerSelect.disabled = true;
