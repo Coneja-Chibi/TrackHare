@@ -53,6 +53,10 @@ import {
     showTokenItemizer,
     isMonkeypatchApplied,
     getTokenItemizerStatus,
+    getAvailableTokenizers,
+    setTokenizer,
+    getSelectedTokenizer,
+    AVAILABLE_TOKENIZERS,
 } from './modules/token-itemizer.js';
 import {
     initTriggerTracking,
@@ -240,6 +244,11 @@ export const CarrotCompass = {
     showTokenItemizer,
     isMonkeypatchApplied,
     getTokenItemizerStatus,
+    // Tokenizer selection
+    getAvailableTokenizers,
+    setTokenizer,
+    getSelectedTokenizer,
+    AVAILABLE_TOKENIZERS,
     // Debug data access
     get deepTriggerData() { return getDeepTriggerDataRaw(); },
     get recursionChain() { return getRecursionChainRaw(); },

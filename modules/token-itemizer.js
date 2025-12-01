@@ -9,6 +9,14 @@ import { getContext, extension_settings } from '../../../../extensions.js';
 import * as openai from '../../../../openai.js';
 // Import shared UI state for access to tracked WI entries
 import { uiState } from './ui-state.js';
+// Import tokenizer functions for custom tokenizer selection
+import {
+    tokenizers,
+    getTextTokens,
+    getFriendlyTokenizerName,
+    guesstimate,
+    CHARACTERS_PER_TOKEN_RATIO,
+} from '../../../../tokenizers.js';
 
 /**
  * Get promptManager dynamically (it's null at load time, created later by ST)
@@ -66,6 +74,117 @@ let lastItemization = null;
  */
 let lastPromptManagerData = null;
 
+/**
+ * Currently selected tokenizer for display/recalculation
+ * null = use ST's default, otherwise a tokenizer ID from tokenizers enum
+ * @type {number|null}
+ */
+let selectedTokenizer = null;
+
+/**
+ * Available tokenizers for the dropdown
+ * Populated on init, excludes API-dependent tokenizers
+ * @type {Array<{id: number, key: string, name: string}>}
+ */
+const AVAILABLE_TOKENIZERS = [
+    { id: tokenizers.NONE, key: 'none', name: 'None (Estimate)' },
+    { id: tokenizers.GPT2, key: 'gpt2', name: 'GPT-2' },
+    { id: tokenizers.OPENAI, key: 'openai', name: 'OpenAI (cl100k)' },
+    { id: tokenizers.LLAMA, key: 'llama', name: 'LLaMA' },
+    { id: tokenizers.LLAMA3, key: 'llama3', name: 'LLaMA 3' },
+    { id: tokenizers.MISTRAL, key: 'mistral', name: 'Mistral' },
+    { id: tokenizers.YI, key: 'yi', name: 'Yi' },
+    { id: tokenizers.CLAUDE, key: 'claude', name: 'Claude' },
+    { id: tokenizers.GEMMA, key: 'gemma', name: 'Gemma' },
+    { id: tokenizers.JAMBA, key: 'jamba', name: 'Jamba' },
+    { id: tokenizers.QWEN2, key: 'qwen2', name: 'Qwen2' },
+    { id: tokenizers.COMMAND_R, key: 'command_r', name: 'Command R' },
+    { id: tokenizers.COMMAND_A, key: 'command_a', name: 'Command A' },
+    { id: tokenizers.NEMO, key: 'nemo', name: 'Nemo' },
+    { id: tokenizers.DEEPSEEK, key: 'deepseek', name: 'DeepSeek' },
+    { id: tokenizers.NERD, key: 'nerd', name: 'NerdStash (Clio)' },
+    { id: tokenizers.NERD2, key: 'nerd2', name: 'NerdStash v2 (Kayra)' },
+];
+
+/**
+ * Count tokens using a specific tokenizer
+ * @param {string} text - Text to tokenize
+ * @param {number|null} tokenizerType - Tokenizer ID, or null for ST default
+ * @returns {Promise<number>} Token count
+ */
+async function countTokensWithTokenizer(text, tokenizerType = null) {
+    if (!text || typeof text !== 'string') return 0;
+
+    // Use ST's default if no specific tokenizer selected
+    if (tokenizerType === null) {
+        const context = getContext();
+        if (context?.getTokenCountAsync) {
+            return await context.getTokenCountAsync(text);
+        }
+        // Fallback to estimate
+        return Math.ceil(text.length / CHARACTERS_PER_TOKEN_RATIO);
+    }
+
+    // Use estimate for "None" tokenizer
+    if (tokenizerType === tokenizers.NONE) {
+        return guesstimate(text);
+    }
+
+    try {
+        // getTextTokens returns array of token IDs - length is the count
+        const tokens = getTextTokens(tokenizerType, text);
+        if (Array.isArray(tokens)) {
+            return tokens.length;
+        }
+        // If it returned something unexpected, fall back to estimate
+        console.warn('[Carrot Compass] Unexpected tokenizer response, using estimate');
+        return guesstimate(text);
+    } catch (error) {
+        console.warn('[Carrot Compass] Tokenizer error, using estimate:', error);
+        return guesstimate(text);
+    }
+}
+
+/**
+ * Recalculate all token counts in itemization with a different tokenizer
+ * @param {number|null} tokenizerType - Tokenizer ID to use
+ * @returns {Promise<void>}
+ */
+async function recalculateTokenCounts(tokenizerType) {
+    if (!lastItemization?.sections) return;
+
+    console.log('[Carrot Compass] Recalculating tokens with tokenizer:', tokenizerType);
+
+    let newTotal = 0;
+    for (const section of lastItemization.sections) {
+        section.tokens = await countTokensWithTokenizer(section.content, tokenizerType);
+        newTotal += section.tokens;
+    }
+
+    lastItemization.totalMarkedTokens = newTotal;
+    lastItemization.tokenizer = tokenizerType;
+    lastItemization.recalculatedAt = Date.now();
+
+    console.log('[Carrot Compass] Recalculated:', lastItemization.sections.length, 'sections,', newTotal, 'total tokens');
+}
+
+/**
+ * Get the name of the currently selected tokenizer
+ * @returns {string}
+ */
+function getSelectedTokenizerName() {
+    if (selectedTokenizer === null) {
+        // Get ST's current tokenizer name
+        try {
+            const { tokenizerName } = getFriendlyTokenizerName();
+            return `ST Default (${tokenizerName})`;
+        } catch {
+            return 'ST Default';
+        }
+    }
+    const found = AVAILABLE_TOKENIZERS.find(t => t.id === selectedTokenizer);
+    return found?.name || 'Unknown';
+}
 
 /**
  * Dynamic mapping of identifier → friendly name (populated from promptManager)
@@ -1342,6 +1461,78 @@ export function showTokenItemizer() {
     const headerControls = document.createElement('div');
     headerControls.style.cssText = 'display: flex; align-items: center; gap: 12px;';
 
+    // Tokenizer selector dropdown
+    const tokenizerContainer = document.createElement('div');
+    tokenizerContainer.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+    const tokenizerLabel = document.createElement('span');
+    tokenizerLabel.textContent = '🔢';
+    tokenizerLabel.title = 'Select tokenizer for counting';
+    tokenizerLabel.style.cssText = 'font-size: 16px;';
+    tokenizerContainer.appendChild(tokenizerLabel);
+
+    const tokenizerSelect = document.createElement('select');
+    tokenizerSelect.style.cssText = `
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: var(--SmartThemeBodyColor);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        min-width: 140px;
+    `;
+
+    // Add "ST Default" option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'default';
+    defaultOption.textContent = getSelectedTokenizerName();
+    if (selectedTokenizer === null) defaultOption.selected = true;
+    tokenizerSelect.appendChild(defaultOption);
+
+    // Add separator
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '──────────';
+    tokenizerSelect.appendChild(separator);
+
+    // Add all available tokenizers
+    for (const tok of AVAILABLE_TOKENIZERS) {
+        const option = document.createElement('option');
+        option.value = tok.id.toString();
+        option.textContent = tok.name;
+        if (selectedTokenizer === tok.id) option.selected = true;
+        tokenizerSelect.appendChild(option);
+    }
+
+    // Handle tokenizer change
+    tokenizerSelect.addEventListener('change', async () => {
+        const value = tokenizerSelect.value;
+        const newTokenizer = value === 'default' ? null : parseInt(value, 10);
+
+        // Show loading state
+        tokenizerSelect.disabled = true;
+        const originalText = tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent;
+        tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent = 'Calculating...';
+
+        try {
+            selectedTokenizer = newTokenizer;
+            await recalculateTokenCounts(newTokenizer);
+
+            // Refresh the modal to show new counts
+            modal.remove();
+            showTokenItemizer();
+        } catch (error) {
+            console.error('[Carrot Compass] Failed to recalculate tokens:', error);
+            tokenizerSelect.disabled = false;
+            tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent = originalText;
+            toastr.error('Failed to recalculate tokens: ' + error.message, 'Carrot Compass');
+        }
+    });
+
+    tokenizerContainer.appendChild(tokenizerSelect);
+    headerControls.appendChild(tokenizerContainer);
+
     // Toggle markers button
     const toggleBtn = document.createElement('button');
     toggleBtn.innerHTML = markersEnabled ? '🔴 Markers ON' : '⚪ Markers OFF';
@@ -1700,10 +1891,12 @@ export function showTokenItemizer() {
 
     const footerInfo = document.createElement('div');
     footerInfo.style.cssText = 'font-size: 12px; opacity: 0.7;';
+    const tokenizerName = getSelectedTokenizerName();
     footerInfo.innerHTML = `
         <span style="color: ${markersEnabled ? '#10b981' : '#ef4444'};">●</span>
         Marker injection: <strong>${markersEnabled ? 'Enabled' : 'Disabled'}</strong>
         ${!markersEnabled ? ' — Enable markers and regenerate to track tokens' : ''}
+        &nbsp;|&nbsp; Tokenizer: <strong>${tokenizerName}</strong>
     `;
 
     const footerActions = document.createElement('div');
@@ -1778,8 +1971,34 @@ export function getTokenItemizerStatus() {
         lastItemizationSections: lastItemization?.sections?.length || 0,
         lastPromptManagerPrompts: lastPromptManagerData?.prompts?.length || 0,
         identifierMappingsCount: identifierToName.size,
+        selectedTokenizer: selectedTokenizer,
+        selectedTokenizerName: getSelectedTokenizerName(),
     };
 }
 
+/**
+ * Get available tokenizers for external use
+ * @returns {Array<{id: number, key: string, name: string}>}
+ */
+export function getAvailableTokenizers() {
+    return [...AVAILABLE_TOKENIZERS];
+}
+
+/**
+ * Set the tokenizer to use for token counting
+ * @param {number|null} tokenizerId - Tokenizer ID or null for ST default
+ */
+export function setTokenizer(tokenizerId) {
+    selectedTokenizer = tokenizerId;
+}
+
+/**
+ * Get currently selected tokenizer
+ * @returns {number|null}
+ */
+export function getSelectedTokenizer() {
+    return selectedTokenizer;
+}
+
 // Export utilities
-export { wrap, parseMarkers, stripMarkers, DISPLAY_NAMES };
+export { wrap, parseMarkers, stripMarkers, DISPLAY_NAMES, AVAILABLE_TOKENIZERS };
