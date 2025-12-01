@@ -5,7 +5,16 @@
 
 import { event_types, eventSource, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
-import { promptManager } from '../../../../openai.js';
+// Import entire module to ensure live binding access
+import * as openai from '../../../../openai.js';
+
+/**
+ * Get promptManager dynamically (it's null at load time, created later by ST)
+ * @returns {Object|null}
+ */
+function getPromptManager() {
+    return openai.promptManager;
+}
 
 /**
  * Whether marker injection is enabled
@@ -278,7 +287,9 @@ function restoreExtensionPrompts() {
  */
 function applyPromptManagerPatch() {
     if (monkeypatchApplied) return;
-    if (!promptManager) {
+
+    const pm = getPromptManager();
+    if (!pm) {
         // promptManager might not be initialized yet - retry later
         console.debug('[Carrot Compass] promptManager not available yet, will retry on GENERATION_STARTED');
         return;
@@ -287,11 +298,11 @@ function applyPromptManagerPatch() {
     console.log('[Carrot Compass] promptManager found, applying patches...');
 
     // Store original functions
-    originalGetPromptCollection = promptManager.getPromptCollection.bind(promptManager);
-    originalPreparePrompt = promptManager.preparePrompt.bind(promptManager);
+    originalGetPromptCollection = pm.getPromptCollection.bind(pm);
+    originalPreparePrompt = pm.preparePrompt.bind(pm);
 
     // Patch getPromptCollection - just capture identifier → name mappings
-    promptManager.getPromptCollection = function(type) {
+    pm.getPromptCollection = function(type) {
         const collection = originalGetPromptCollection(type);
 
         if (collection?.collection) {
@@ -311,7 +322,7 @@ function applyPromptManagerPatch() {
     };
 
     // Patch preparePrompt - this is where content gets finalized, so wrap here
-    promptManager.preparePrompt = function(prompt, original = null) {
+    pm.preparePrompt = function(prompt, original = null) {
         const prepared = originalPreparePrompt(prompt, original);
 
         // Debug: log all prompts passing through
@@ -351,14 +362,16 @@ function applyPromptManagerPatch() {
  */
 export function removePromptManagerPatch() {
     if (!monkeypatchApplied) return;
-    if (!promptManager) return;
+
+    const pm = getPromptManager();
+    if (!pm) return;
 
     if (originalGetPromptCollection) {
-        promptManager.getPromptCollection = originalGetPromptCollection;
+        pm.getPromptCollection = originalGetPromptCollection;
         originalGetPromptCollection = null;
     }
     if (originalPreparePrompt) {
-        promptManager.preparePrompt = originalPreparePrompt;
+        pm.preparePrompt = originalPreparePrompt;
         originalPreparePrompt = null;
     }
 
@@ -472,20 +485,21 @@ function onGenerationEnded() {
  * This gives us native ST token counts per prompt identifier
  */
 function capturePromptManagerData() {
-    if (!promptManager) {
+    const pm = getPromptManager();
+    if (!pm) {
         console.debug('[Carrot Compass] promptManager not available');
         return;
     }
 
     try {
         // Get token counts per identifier from ST's native system
-        const counts = promptManager.tokenHandler?.counts || {};
+        const counts = pm.tokenHandler?.counts || {};
 
         console.debug('[Carrot Compass] Native ST token counts:', counts);
 
         // Get the prompt collection to get content and metadata
         const prompts = [];
-        const serviceSettings = promptManager.serviceSettings;
+        const serviceSettings = pm.serviceSettings;
 
         if (serviceSettings?.prompts) {
             for (const prompt of serviceSettings.prompts) {
@@ -647,19 +661,49 @@ export function getItemizationSummary() {
 }
 
 /**
+ * Retry applying the monkeypatch with exponential backoff
+ * @param {number} attempts - Number of attempts remaining
+ * @param {number} delay - Current delay in ms
+ */
+function retryApplyPatch(attempts = 5, delay = 500) {
+    if (monkeypatchApplied) return;
+
+    applyPromptManagerPatch();
+
+    if (!monkeypatchApplied && attempts > 1) {
+        console.debug(`[Carrot Compass] Retrying monkeypatch in ${delay}ms (${attempts - 1} attempts remaining)`);
+        setTimeout(() => retryApplyPatch(attempts - 1, delay * 2), delay);
+    }
+}
+
+/**
  * Initialize the token itemizer
  */
 export function initTokenItemizer() {
     // Try to apply monkeypatch immediately (may fail if promptManager not ready)
     applyPromptManagerPatch();
 
+    // If immediate patch failed, retry with backoff (catches early init timing)
+    if (!monkeypatchApplied) {
+        setTimeout(() => retryApplyPatch(5, 500), 100);
+    }
+
     // Retry patch on generation start if not already applied
     // This ensures we catch promptManager after it's been initialized
     eventSource.on(event_types.GENERATION_STARTED, () => {
         if (!monkeypatchApplied) {
+            console.log('[Carrot Compass] Attempting monkeypatch on GENERATION_STARTED...');
             applyPromptManagerPatch();
         }
         injectExtensionPromptMarkers();
+    });
+
+    // Also try on CHAT_COMPLETION_SETTINGS_READY - this fires when OpenAI settings are loaded
+    eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, () => {
+        if (!monkeypatchApplied) {
+            console.log('[Carrot Compass] Attempting monkeypatch on CHAT_COMPLETION_SETTINGS_READY...');
+            applyPromptManagerPatch();
+        }
     });
 
     // Inject markers into story string params before combine
@@ -1186,6 +1230,30 @@ export function showTokenItemizer() {
     document.addEventListener('keydown', escHandler);
 
     document.body.appendChild(modal);
+}
+
+/**
+ * Check if monkeypatch is currently applied
+ * @returns {boolean}
+ */
+export function isMonkeypatchApplied() {
+    return monkeypatchApplied;
+}
+
+/**
+ * Get diagnostic info for debugging
+ * @returns {Object}
+ */
+export function getTokenItemizerStatus() {
+    const pm = getPromptManager();
+    return {
+        monkeypatchApplied,
+        markersEnabled,
+        promptManagerAvailable: !!pm,
+        lastItemizationSections: lastItemization?.sections?.length || 0,
+        lastPromptManagerPrompts: lastPromptManagerData?.prompts?.length || 0,
+        identifierMappingsCount: identifierToName.size,
+    };
 }
 
 // Export utilities

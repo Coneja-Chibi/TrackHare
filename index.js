@@ -51,6 +51,8 @@ import {
     hasItemizationData,
     getItemizationSummary,
     showTokenItemizer,
+    isMonkeypatchApplied,
+    getTokenItemizerStatus,
 } from './modules/token-itemizer.js';
 import {
     initTriggerTracking,
@@ -236,6 +238,8 @@ export const CarrotCompass = {
     hasItemizationData,
     getItemizationSummary,
     showTokenItemizer,
+    isMonkeypatchApplied,
+    getTokenItemizerStatus,
     // Debug data access
     get deepTriggerData() { return getDeepTriggerDataRaw(); },
     get recursionChain() { return getRecursionChainRaw(); },
