@@ -3,7 +3,7 @@
 // Injects <<TAG>>content<</TAG>> markers, parses from final prompt
 // =============================================================================
 
-import { event_types, eventSource, extension_prompts, saveSettingsDebounced } from '../../../../../script.js';
+import { event_types, eventSource, extension_prompts, saveSettingsDebounced, main_api } from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
 // Import entire module to ensure live binding access
 import * as openai from '../../../../openai.js';
@@ -18,7 +18,6 @@ import {
     guesstimate,
     CHARACTERS_PER_TOKEN_RATIO,
 } from '../../../../tokenizers.js';
-import { main_api } from '../../../../script.js';
 
 /**
  * Get promptManager dynamically (it's null at load time, created later by ST)
