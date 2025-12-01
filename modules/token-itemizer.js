@@ -1556,15 +1556,16 @@ export function initTokenItemizer() {
  * Category colors for visual grouping
  */
 const CATEGORY_COLORS = {
-    'World Info': { bg: '#f97316', icon: '📚' },  // Orange
-    'Preset Prompts': { bg: '#f472b6', icon: '✨' },  // Pink
-    'Character Card': { bg: '#22c55e', icon: '🎭' },  // Green
-    'Persona': { bg: '#a855f7', icon: '👤' },  // Purple
-    'Extensions': { bg: '#facc15', icon: '🔌' },  // Yellow
-    'Chat History': { bg: '#38bdf8', icon: '💬' },  // Sky blue
-    'System Prompts': { bg: '#fb7185', icon: '⚙️' },  // Rose/coral
-    'Example Dialogue': { bg: '#c084fc', icon: '📝' },  // Violet
-    'Other': { bg: '#94a3b8', icon: '📄' },  // Slate
+    // Cohesive warm-to-cool gradient palette
+    'World Info': { bg: '#e85d04', icon: '📚' },        // Burnt orange
+    'Preset Prompts': { bg: '#dc2f6f', icon: '✨' },    // Raspberry
+    'Character Card': { bg: '#9d4edd', icon: '🎭' },    // Violet
+    'Persona': { bg: '#7b2cbf', icon: '👤' },           // Deep purple
+    'Extensions': { bg: '#5a189a', icon: '🔌' },        // Royal purple
+    'Chat History': { bg: '#3c096c', icon: '💬' },      // Dark purple
+    'System Prompts': { bg: '#f72585', icon: '⚙️' },    // Hot pink
+    'Example Dialogue': { bg: '#b5179e', icon: '📝' },  // Magenta
+    'Other': { bg: '#560bad', icon: '📄' },             // Indigo
 };
 
 /**
@@ -2338,18 +2339,8 @@ export function showTokenItemizer() {
             const isWI = section.isWorldInfo || section.tag.startsWith('WI_');
             const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
 
-            // Compact toggle - small clickable swatch with dimmed color when excluded
+            // No toggle boxes - use right-click/long-press for exclusion
             sectionHeader.innerHTML = `
-                <div class="section-toggle" data-idx="${globalIdx}" title="Click to ${isSectionExcluded ? 'include' : 'exclude'}" style="
-                    width: 12px;
-                    height: 12px;
-                    background: ${isSectionExcluded ? tagColor + '30' : tagColor};
-                    border: 2px solid ${isSectionExcluded ? tagColor + '50' : tagColor};
-                    border-radius: 3px;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    flex-shrink: 0;
-                "></div>
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
                     <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor); ${isSectionExcluded ? 'text-decoration: line-through;' : ''}">${section.name}</span>
                     ${isUUID ? `<span style="font-size: 9px; opacity: 0.4; font-family: monospace; letter-spacing: -0.5px;">${section.tag.toLowerCase().replace(/_/g, '-')}</span>` : ''}
@@ -2380,18 +2371,43 @@ export function showTokenItemizer() {
                 <span class="expand-icon" style="opacity: 0.4; transition: transform 0.2s; font-size: 10px;">▼</span>
             `;
 
-            // Handle section toggle click
-            const sectionToggle = sectionHeader.querySelector('.section-toggle');
-            sectionToggle.addEventListener('click', (e) => {
-                e.stopPropagation(); // Don't trigger expand
-                const idx = parseInt(sectionToggle.dataset.idx, 10);
-                if (excludedSections.has(idx)) {
-                    excludedSections.delete(idx);
+            // Right-click context menu for exclusion
+            sectionEl.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (excludedSections.has(globalIdx)) {
+                    excludedSections.delete(globalIdx);
                 } else {
-                    excludedSections.add(idx);
+                    excludedSections.add(globalIdx);
                 }
                 modal.remove();
                 showTokenItemizer();
+            });
+
+            // Long-press for mobile/tablet (500ms hold)
+            let longPressTimer = null;
+            sectionEl.addEventListener('touchstart', (e) => {
+                longPressTimer = setTimeout(() => {
+                    e.preventDefault();
+                    if (excludedSections.has(globalIdx)) {
+                        excludedSections.delete(globalIdx);
+                    } else {
+                        excludedSections.add(globalIdx);
+                    }
+                    modal.remove();
+                    showTokenItemizer();
+                }, 500);
+            });
+            sectionEl.addEventListener('touchend', () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            });
+            sectionEl.addEventListener('touchmove', () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
             });
 
             // Section content (collapsed by default)
