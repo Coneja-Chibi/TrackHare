@@ -5,12 +5,25 @@
 
 import { event_types, eventSource, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
+import { promptManager } from '../../../../../openai.js';
 
 /**
  * Whether marker injection is enabled
  * @type {boolean}
  */
 let markersEnabled = false;
+
+/**
+ * Whether the monkeypatch has been applied
+ * @type {boolean}
+ */
+let monkeypatchApplied = false;
+
+/**
+ * Original getPromptCollection function (stored for restoration)
+ * @type {Function|null}
+ */
+let originalGetPromptCollection = null;
 
 /**
  * Track original extension_prompts values for restoration
@@ -23,6 +36,18 @@ let originalExtPrompts = new Map();
  * @type {Object|null}
  */
 let lastItemization = null;
+
+/**
+ * Last captured prompt manager data
+ * @type {Object|null}
+ */
+let lastPromptManagerData = null;
+
+/**
+ * Dynamic mapping of identifier → friendly name (populated from promptManager)
+ * @type {Map<string, string>}
+ */
+const identifierToName = new Map();
 
 /**
  * Marker mappings for extension_prompts
@@ -38,7 +63,7 @@ const EXT_PROMPT_TAGS = {
 };
 
 /**
- * Friendly display names for all tags
+ * Friendly display names for known tags (fallback for extension prompts and story string)
  */
 const DISPLAY_NAMES = {
     // Extension prompts
@@ -49,7 +74,7 @@ const DISPLAY_NAMES = {
     'CHROMADB': 'Smart Context',
     'VECTHARE': 'VectHare',
     'RAG': 'RAG Context',
-    // Story string / character card
+    // Story string / character card (from GENERATE_BEFORE_COMBINE_PROMPTS)
     'CHAR': 'Character Description',
     'PERSONALITY': 'Personality',
     'PERSONA': 'Persona',
@@ -68,18 +93,31 @@ const DISPLAY_NAMES = {
 };
 
 /**
+ * Sanitize identifier for use as marker tag
+ * Converts to uppercase and replaces non-alphanumeric with underscores
+ * @param {string} identifier
+ * @returns {string}
+ */
+function sanitizeTag(identifier) {
+    if (!identifier) return 'UNKNOWN';
+    return identifier.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+}
+
+/**
  * Wrap content with markers
- * @param {string} tag - Tag name
+ * @param {string} tag - Tag name (will be sanitized)
  * @param {string} content - Content to wrap
  * @returns {string}
  */
 function wrap(tag, content) {
     if (!content?.trim()) return content;
-    return `<<${tag}>>${content}<</${tag}>>`;
+    const safeTag = sanitizeTag(tag);
+    return `<<${safeTag}>>${content}<</${safeTag}>>`;
 }
 
 /**
  * Parse all markers from text
+ * Handles any alphanumeric identifier with underscores
  * @param {string} text
  * @returns {Array<{tag: string, content: string}>}
  */
@@ -87,7 +125,8 @@ function parseMarkers(text) {
     if (!text) return [];
 
     const results = [];
-    const regex = /<<([A-Z_0-9]+)>>([\s\S]*?)<<\/\1>>/g;
+    // Match any uppercase alphanumeric tag with underscores
+    const regex = /<<([A-Z0-9_]+)>>([\s\S]*?)<<\/\1>>/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
@@ -98,6 +137,30 @@ function parseMarkers(text) {
     }
 
     return results;
+}
+
+/**
+ * Get display name for a tag
+ * Checks identifierToName map first, then DISPLAY_NAMES, then formats the tag itself
+ * @param {string} tag - The marker tag
+ * @returns {string}
+ */
+function getDisplayName(tag) {
+    // Check dynamic mapping from promptManager (identifier → name)
+    if (identifierToName.has(tag)) {
+        return identifierToName.get(tag);
+    }
+    // Also check lowercase version (original identifier before sanitization)
+    const lowerTag = tag.toLowerCase();
+    if (identifierToName.has(lowerTag)) {
+        return identifierToName.get(lowerTag);
+    }
+    // Check static DISPLAY_NAMES
+    if (DISPLAY_NAMES[tag]) {
+        return DISPLAY_NAMES[tag];
+    }
+    // Format tag as readable name (replace underscores, title case)
+    return tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\b\w+/g, w => w.charAt(0) + w.slice(1).toLowerCase());
 }
 
 /**
@@ -199,6 +262,74 @@ function restoreExtensionPrompts() {
 }
 
 // =============================================================================
+// PROMPTMANAGER MONKEYPATCH
+// =============================================================================
+
+/**
+ * Apply monkeypatch to promptManager.getPromptCollection
+ * This intercepts prompt collection and wraps each prompt's content with markers
+ */
+function applyPromptManagerPatch() {
+    if (monkeypatchApplied) return;
+    if (!promptManager) {
+        console.warn('[Carrot Compass] promptManager not available for patching');
+        return;
+    }
+
+    // Store original function
+    originalGetPromptCollection = promptManager.getPromptCollection.bind(promptManager);
+
+    // Apply patch
+    promptManager.getPromptCollection = function(type) {
+        const collection = originalGetPromptCollection(type);
+
+        if (markersEnabled && collection?.collection) {
+            // Clear and rebuild identifier → name mapping
+            identifierToName.clear();
+
+            for (const prompt of collection.collection) {
+                if (!prompt) continue;
+
+                // Store mapping of identifier → name
+                if (prompt.identifier && prompt.name) {
+                    const sanitizedId = sanitizeTag(prompt.identifier);
+                    identifierToName.set(sanitizedId, prompt.name);
+                    identifierToName.set(prompt.identifier, prompt.name);
+                }
+
+                // Wrap content with markers if it has content
+                // Skip marker prompts (they're placeholders without real content)
+                if (prompt.content?.trim() && !prompt.marker) {
+                    prompt.content = wrap(prompt.identifier, prompt.content);
+                }
+            }
+
+            console.debug('[Carrot Compass] Injected markers into', collection.collection.length, 'prompt manager prompts');
+        }
+
+        return collection;
+    };
+
+    monkeypatchApplied = true;
+    console.log('[Carrot Compass] Applied promptManager.getPromptCollection monkeypatch');
+}
+
+/**
+ * Remove the monkeypatch and restore original function
+ * Exported for potential cleanup use
+ */
+export function removePromptManagerPatch() {
+    if (!monkeypatchApplied || !originalGetPromptCollection) return;
+    if (!promptManager) return;
+
+    promptManager.getPromptCollection = originalGetPromptCollection;
+    originalGetPromptCollection = null;
+    monkeypatchApplied = false;
+
+    console.log('[Carrot Compass] Removed promptManager.getPromptCollection monkeypatch');
+}
+
+// =============================================================================
 // PROMPT PROCESSING
 // =============================================================================
 
@@ -234,7 +365,7 @@ async function processChatCompletion(eventData) {
 
             itemization.sections.push({
                 tag,
-                name: DISPLAY_NAMES[tag] || tag.replace(/_/g, ' '),
+                name: getDisplayName(tag),
                 content: markerContent,
                 tokens,
                 preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
@@ -248,6 +379,7 @@ async function processChatCompletion(eventData) {
     lastItemization = itemization;
 
     console.debug('[Carrot Compass] Itemization:', itemization.sections.length, 'sections,', itemization.totalMarkedTokens, 'tokens');
+    console.debug('[Carrot Compass] Identifier mappings:', Object.fromEntries(identifierToName));
 }
 
 /**
@@ -277,7 +409,7 @@ async function processTextCompletion(eventData) {
 
         itemization.sections.push({
             tag,
-            name: DISPLAY_NAMES[tag] || tag.replace(/_/g, ' '),
+            name: getDisplayName(tag),
             content: markerContent,
             tokens,
             preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
@@ -296,6 +428,75 @@ async function processTextCompletion(eventData) {
  */
 function onGenerationEnded() {
     restoreExtensionPrompts();
+}
+
+/**
+ * Capture prompt manager data after CHAT_COMPLETION_PROMPT_READY
+ * This gives us native ST token counts per prompt identifier
+ */
+function capturePromptManagerData() {
+    if (!promptManager) {
+        console.debug('[Carrot Compass] promptManager not available');
+        return;
+    }
+
+    try {
+        // Get token counts per identifier from ST's native system
+        const counts = promptManager.tokenHandler?.counts || {};
+
+        // Get the prompt collection to get content and metadata
+        const prompts = [];
+        const serviceSettings = promptManager.serviceSettings;
+
+        if (serviceSettings?.prompts) {
+            for (const prompt of serviceSettings.prompts) {
+                if (!prompt.identifier) continue;
+
+                const tokenCount = counts[prompt.identifier] || 0;
+                if (tokenCount === 0 && !prompt.content?.trim()) continue;
+
+                prompts.push({
+                    identifier: prompt.identifier,
+                    name: prompt.name || prompt.identifier,
+                    content: prompt.content || '',
+                    tokens: tokenCount,
+                    role: prompt.role || 'system',
+                    enabled: prompt.enabled !== false,
+                    system_prompt: prompt.system_prompt || false,
+                    injection_position: prompt.injection_position,
+                    injection_depth: prompt.injection_depth,
+                    marker: prompt.marker || false,
+                });
+            }
+        }
+
+        lastPromptManagerData = {
+            timestamp: Date.now(),
+            counts: { ...counts },
+            prompts,
+            totalTokens: Object.values(counts).reduce((sum, n) => sum + n, 0),
+        };
+
+        console.debug('[Carrot Compass] Captured prompt manager data:', prompts.length, 'prompts,', lastPromptManagerData.totalTokens, 'total tokens');
+    } catch (error) {
+        console.error('[Carrot Compass] Failed to capture prompt manager data:', error);
+    }
+}
+
+/**
+ * Get the last captured prompt manager data
+ * @returns {Object|null}
+ */
+export function getPromptManagerData() {
+    return lastPromptManagerData;
+}
+
+/**
+ * Check if prompt manager data is available
+ * @returns {boolean}
+ */
+export function hasPromptManagerData() {
+    return lastPromptManagerData?.prompts?.length > 0;
 }
 
 // =============================================================================
@@ -353,14 +554,17 @@ export function getItemizationSummary() {
         categories: {},
     };
 
-    // Group sections by category
+    // Known tags grouped by category
     const categoryMap = {
-        'Character Card': ['CHAR', 'PERSONALITY', 'SCENARIO', 'PERSONA'],
-        'World Info': ['WI_BEFORE', 'WI_AFTER'],
-        'System Prompts': ['MAIN', 'JB', 'NSFW'],
-        'Extensions': ['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG'],
-        'Other': ['EXAMPLES', 'ANCHOR_BEFORE', 'ANCHOR_AFTER'],
+        'Character Card': ['CHAR', 'PERSONALITY', 'SCENARIO', 'PERSONA', 'CHARDESCRIPTION', 'CHARPERSONALITY', 'PERSONADESCRIPTION'],
+        'World Info': ['WI_BEFORE', 'WI_AFTER', 'WORLDINFOBEFORE', 'WORLDINFOAFTER'],
+        'System Prompts': ['MAIN', 'JB', 'NSFW', 'JAILBREAK', 'ENHANCEDEFINITIONS'],
+        'Extensions': ['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK'],
+        'Chat': ['EXAMPLES', 'DIALOGUEEXAMPLES', 'CHATHISTORY'],
     };
+
+    // Build a set of all known tags
+    const allKnownTags = new Set(Object.values(categoryMap).flat());
 
     for (const [category, tags] of Object.entries(categoryMap)) {
         const sections = lastItemization.sections.filter(s => tags.includes(s.tag));
@@ -372,11 +576,11 @@ export function getItemizationSummary() {
         }
     }
 
-    // Any uncategorized
-    const allKnownTags = Object.values(categoryMap).flat();
-    const uncategorized = lastItemization.sections.filter(s => !allKnownTags.includes(s.tag));
+    // Any uncategorized (user-defined prompts, unknown tags)
+    // These go into "Custom Prompts" category
+    const uncategorized = lastItemization.sections.filter(s => !allKnownTags.has(s.tag));
     if (uncategorized.length > 0) {
-        summary.categories['Uncategorized'] = {
+        summary.categories['Custom Prompts'] = {
             sections: uncategorized,
             tokens: uncategorized.reduce((sum, s) => sum + s.tokens, 0),
         };
@@ -389,6 +593,10 @@ export function getItemizationSummary() {
  * Initialize the token itemizer
  */
 export function initTokenItemizer() {
+    // Apply monkeypatch to promptManager (this is the key hook for prompt manager prompts)
+    // We do this on init so the patch is ready when markers are enabled
+    applyPromptManagerPatch();
+
     // Inject markers at generation start (for extension_prompts)
     eventSource.on(event_types.GENERATION_STARTED, injectExtensionPromptMarkers);
 
@@ -398,6 +606,9 @@ export function initTokenItemizer() {
     // Capture itemization from final prompts
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, processChatCompletion);
     eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, processTextCompletion);
+
+    // Capture prompt manager data (always, regardless of marker state)
+    eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, capturePromptManagerData);
 
     // Clean up
     eventSource.on(event_types.GENERATION_ENDED, onGenerationEnded);
@@ -417,6 +628,8 @@ const CATEGORY_COLORS = {
     'World Info': { bg: '#f97316', icon: '📚' },
     'System Prompts': { bg: '#6366f1', icon: '⚙️' },
     'Extensions': { bg: '#8b5cf6', icon: '🔌' },
+    'Chat': { bg: '#64748b', icon: '💬' },
+    'Custom Prompts': { bg: '#10b981', icon: '✨' },
     'Other': { bg: '#64748b', icon: '📄' },
     'Uncategorized': { bg: '#475569', icon: '❓' },
 };
