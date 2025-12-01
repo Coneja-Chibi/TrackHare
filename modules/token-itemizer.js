@@ -115,6 +115,16 @@ let categoryOrder = null;
 let showBudgetBreakdown = false;
 
 /**
+ * Known depth-injected prompts captured before generation
+ * Used to identify character notes, author's note, etc. in chat history
+ * @type {{authorNote: string|null, characterDepthPrompt: string|null}}
+ */
+let knownDepthPrompts = {
+    authorNote: null,
+    characterDepthPrompt: null,
+};
+
+/**
  * Get the current ST tokenizer info (what ST is actually using)
  * @returns {{id: number, name: string}}
  */
@@ -492,6 +502,9 @@ const DISPLAY_NAMES = {
     'EXAMPLES': 'Example Dialogue',
     'ANCHOR_BEFORE': 'Anchor (Before)',
     'ANCHOR_AFTER': 'Anchor (After)',
+    // Depth-injected prompts (identified from content matching)
+    'AUTHORSNOTE': 'Author\'s Note',
+    'CHAR_DEPTH_PROMPT': 'Character Notes',
 };
 
 /**
@@ -897,6 +910,39 @@ function findInjectedWIContent(content) {
 }
 
 /**
+ * Identify known depth-injected prompts by content matching
+ * Compares content against known Author's Note and Character Depth Prompt
+ * @param {string} content - Content to identify
+ * @returns {{tag: string, name: string}|null} Identified prompt info or null
+ */
+function identifyDepthPrompt(content) {
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+
+    // Check for Author's Note - content should match exactly or be contained
+    if (knownDepthPrompts.authorNote) {
+        const anContent = knownDepthPrompts.authorNote;
+        // Check if the content matches Author's Note (allowing for minor whitespace differences)
+        if (trimmed === anContent || trimmed.includes(anContent) || anContent.includes(trimmed)) {
+            console.debug('[Carrot Compass] Identified Author\'s Note in chat history');
+            return { tag: 'AUTHORSNOTE', name: 'Author\'s Note' };
+        }
+    }
+
+    // Check for Character Depth Prompt (character notes)
+    if (knownDepthPrompts.characterDepthPrompt) {
+        const cdpContent = knownDepthPrompts.characterDepthPrompt;
+        // Check if the content matches Character Depth Prompt
+        if (trimmed === cdpContent || trimmed.includes(cdpContent) || cdpContent.includes(trimmed)) {
+            console.debug('[Carrot Compass] Identified Character Depth Prompt in chat history');
+            return { tag: 'CHAR_DEPTH_PROMPT', name: 'Character Notes' };
+        }
+    }
+
+    return null;
+}
+
+/**
  * Extract nested markers and unmarked content from CHATHISTORY content
  * This handles depth-injected preset prompts that appear inside chat messages
  * @param {string} content - The CHATHISTORY content that may contain nested markers
@@ -932,17 +978,33 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
     }
 
     if (nestedMarkers.length === 0) {
-        // No nested markers - return as chat content (WI already stripped if skipWI)
+        // No nested markers - check if this is a known depth-injected prompt
         const tokens = await countTokens(processedContent);
         if (tokens > 0) {
-            sections.push({
-                tag: parentTag,
-                name: getDisplayName(parentTag),
-                content: processedContent,
-                tokens,
-                preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
-                role,
-            });
+            // Try to identify known depth prompts by content matching
+            const identifiedPrompt = identifyDepthPrompt(processedContent);
+
+            if (identifiedPrompt) {
+                sections.push({
+                    tag: identifiedPrompt.tag,
+                    name: identifiedPrompt.name,
+                    content: processedContent,
+                    tokens,
+                    preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
+                    role,
+                    isDepthInjected: true,
+                });
+            } else {
+                // Unknown content - keep as chat history
+                sections.push({
+                    tag: parentTag,
+                    name: getDisplayName(parentTag),
+                    content: processedContent,
+                    tokens,
+                    preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
+                    role,
+                });
+            }
         }
         return sections;
     }
@@ -1029,6 +1091,25 @@ async function processChatCompletion(eventData) {
 
     const context = getContext();
     const countTokens = context?.getTokenCountAsync || (t => Math.ceil(t.length / 4));
+
+    // Capture known depth prompts for later identification in chat history
+    // Author's Note from extension_prompts['2_floating_prompt']
+    const authorNotePrompt = context?.extensionPrompts?.['2_floating_prompt'];
+    knownDepthPrompts.authorNote = authorNotePrompt?.value?.trim() || null;
+
+    // Character Depth Prompt (character notes) from character data
+    const charId = context?.characterId;
+    const characters = context?.characters;
+    if (charId !== undefined && characters?.[charId]?.data?.extensions?.depth_prompt?.prompt) {
+        knownDepthPrompts.characterDepthPrompt = characters[charId].data.extensions.depth_prompt.prompt.trim();
+    } else {
+        knownDepthPrompts.characterDepthPrompt = null;
+    }
+
+    console.debug('[Carrot Compass] Captured depth prompts:', {
+        hasAuthorNote: !!knownDepthPrompts.authorNote,
+        hasCharDepthPrompt: !!knownDepthPrompts.characterDepthPrompt,
+    });
 
     const itemization = {
         timestamp: Date.now(),
@@ -1341,6 +1422,11 @@ function categorizeSection(section) {
         return 'Character Card';
     }
 
+    // Character Depth Prompt (character notes) - identified from depth injection
+    if (tag === 'CHAR_DEPTH_PROMPT') {
+        return 'Character Card';
+    }
+
     // World Info - both marker prompts, our custom WI markers, and depth-injected WI
     if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag.startsWith('WI_')) {
         return 'World Info';
@@ -1352,6 +1438,7 @@ function categorizeSection(section) {
     }
 
     // Chat History - messages from conversation (marker prompt)
+    // But NOT if it was identified as something else (AUTHORSNOTE, CHAR_DEPTH_PROMPT)
     if (tag.startsWith('CHATHISTORY') || tag === 'CHATHISTORY') {
         return 'Chat History';
     }
