@@ -90,6 +90,25 @@ let selectedTokenizer = null;
 let originalTokenizer = null;
 
 /**
+ * Set of excluded section indices (for "what-if" calculations)
+ * @type {Set<number>}
+ */
+let excludedSections = new Set();
+
+/**
+ * Set of excluded categories (for "what-if" calculations)
+ * @type {Set<string>}
+ */
+let excludedCategories = new Set();
+
+/**
+ * Custom section order within categories (for drag-to-reorder)
+ * Map of categoryName -> array of section indices in display order
+ * @type {Map<string, number[]>}
+ */
+let sectionOrder = new Map();
+
+/**
  * Get the current ST tokenizer info (what ST is actually using)
  * @returns {{id: number, name: string}}
  */
@@ -216,8 +235,17 @@ async function recalculateTokenCounts(tokenizerType) {
 
     let newTotal = 0;
     for (const section of lastItemization.sections) {
+        // Store original tokens on first recalculation
+        if (section.originalTokens === undefined) {
+            section.originalTokens = section.tokens;
+        }
         section.tokens = await countTokensWithTokenizer(section.content, tokenizerType);
         newTotal += section.tokens;
+    }
+
+    // Store original total on first recalculation
+    if (lastItemization.originalTotalTokens === undefined) {
+        lastItemization.originalTotalTokens = lastItemization.totalMarkedTokens;
     }
 
     lastItemization.totalMarkedTokens = newTotal;
@@ -225,6 +253,72 @@ async function recalculateTokenCounts(tokenizerType) {
     lastItemization.recalculatedAt = Date.now();
 
     console.log('[Carrot Compass] Recalculated:', lastItemization.sections.length, 'sections,', newTotal, 'total tokens');
+}
+
+/**
+ * Restore original token counts (when user selects original tokenizer)
+ * @returns {Promise<void>}
+ */
+async function restoreOriginalTokenCounts() {
+    if (!lastItemization?.sections) return;
+
+    console.log('[Carrot Compass] Restoring original token counts');
+
+    for (const section of lastItemization.sections) {
+        if (section.originalTokens !== undefined) {
+            section.tokens = section.originalTokens;
+        }
+    }
+
+    if (lastItemization.originalTotalTokens !== undefined) {
+        lastItemization.totalMarkedTokens = lastItemization.originalTotalTokens;
+    }
+
+    lastItemization.tokenizer = null;
+    delete lastItemization.recalculatedAt;
+
+    console.log('[Carrot Compass] Restored original counts');
+}
+
+/**
+ * Calculate effective totals excluding selected sections/categories
+ * @returns {{total: number, excluded: number, effective: number, excludedCount: number}}
+ */
+function calculateEffectiveTotals() {
+    if (!lastItemization?.sections) {
+        return { total: 0, excluded: 0, effective: 0, excludedCount: 0 };
+    }
+
+    let total = 0;
+    let excluded = 0;
+    let excludedCount = 0;
+
+    lastItemization.sections.forEach((section, idx) => {
+        total += section.tokens;
+
+        // Check if this section is excluded directly or via category
+        const isExcluded = excludedSections.has(idx) || excludedCategories.has(section.category);
+        if (isExcluded) {
+            excluded += section.tokens;
+            excludedCount++;
+        }
+    });
+
+    return {
+        total,
+        excluded,
+        effective: total - excluded,
+        excludedCount,
+    };
+}
+
+/**
+ * Reset exclusions and custom ordering
+ */
+function resetExclusions() {
+    excludedSections.clear();
+    excludedCategories.clear();
+    sectionOrder.clear();
 }
 
 /**
@@ -257,6 +351,29 @@ function getActiveTokenizerId() {
         return originalTokenizer.id;
     }
     return getCurrentSTTokenizer().id;
+}
+
+/**
+ * Get the max context size from ST settings
+ * @returns {number} Max context in tokens
+ */
+function getMaxContextSize() {
+    try {
+        // Try OpenAI settings first (most common)
+        if (openai.oai_settings?.openai_max_context) {
+            return openai.oai_settings.openai_max_context;
+        }
+        // Fallback - try to read from the UI element
+        const contextEl = document.getElementById('openai_max_context');
+        if (contextEl?.value) {
+            return parseInt(contextEl.value, 10);
+        }
+        // Default fallback
+        return 0;
+    } catch (e) {
+        console.debug('[Carrot Compass] Could not get max context:', e);
+        return 0;
+    }
 }
 
 /**
@@ -989,6 +1106,7 @@ async function processChatCompletion(eventData) {
     }
 
     lastItemization = itemization;
+    resetExclusions(); // Clear any exclusions from previous generation
 
     console.debug('[Carrot Compass] Itemization:', itemization.sections.length, 'sections,', itemization.totalMarkedTokens, 'tokens');
     console.debug('[Carrot Compass] Identifier mappings:', Object.fromEntries(identifierToName));
@@ -1036,6 +1154,7 @@ async function processTextCompletion(eventData) {
     }
 
     lastItemization = itemization;
+    resetExclusions(); // Clear any exclusions from previous generation
 
     console.debug('[Carrot Compass] Text itemization:', itemization.sections.length, 'sections');
 }
@@ -1659,7 +1778,15 @@ export function showTokenItemizer() {
         align-items: center;
         justify-content: center;
     `;
-    centerHole.innerHTML = `
+    // Calculate effective totals (accounting for exclusions)
+    const effectiveTotals = calculateEffectiveTotals();
+    const hasExclusions = effectiveTotals.excludedCount > 0;
+
+    centerHole.innerHTML = hasExclusions ? `
+        <div style="font-size: 16px; font-weight: 700; color: #10b981;">${effectiveTotals.effective.toLocaleString()}</div>
+        <div style="font-size: 9px; opacity: 0.5; text-decoration: line-through;">${summary.totalTokens.toLocaleString()}</div>
+        <div style="font-size: 9px; color: #ef4444;">-${effectiveTotals.excluded.toLocaleString()}</div>
+    ` : `
         <div style="font-size: 20px; font-weight: 700; color: var(--SmartThemeBodyColor);">${summary.totalTokens.toLocaleString()}</div>
         <div style="font-size: 10px; opacity: 0.7;">tokens</div>
     `;
@@ -1783,16 +1910,26 @@ export function showTokenItemizer() {
         const value = tokenizerSelect.value;
         const newTokenizer = parseInt(value, 10);
 
+        // Check if user selected the original tokenizer - restore original state
+        const isSelectingOriginal = originalTokenizer && newTokenizer === originalTokenizer.id;
+
         // Show loading state
         tokenizerSelect.disabled = true;
         currentTokenizerDisplay.innerHTML = `
-            <div class="ck-tokenizer-current__name">Recalculating...</div>
+            <div class="ck-tokenizer-current__name">${isSelectingOriginal ? 'Restoring original...' : 'Recalculating...'}</div>
             <div class="ck-tokenizer-current__status">Please wait</div>
         `;
 
         try {
-            selectedTokenizer = newTokenizer;
-            await recalculateTokenCounts(newTokenizer);
+            if (isSelectingOriginal) {
+                // Restore original - set to null so we use originalTokenizer data
+                selectedTokenizer = null;
+                // Restore original token counts from lastItemization.originalTokenizer
+                await restoreOriginalTokenCounts();
+            } else {
+                selectedTokenizer = newTokenizer;
+                await recalculateTokenCounts(newTokenizer);
+            }
 
             // Refresh the modal to show new counts
             modal.remove();
@@ -1821,6 +1958,82 @@ export function showTokenItemizer() {
 
     sidebar.appendChild(tokenizerSection);
 
+    // Context Budget Section
+    const maxContext = getMaxContextSize();
+    if (maxContext > 0) {
+        const budgetSection = document.createElement('div');
+        budgetSection.style.cssText = `
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        `;
+
+        const budgetTitle = document.createElement('div');
+        budgetTitle.style.cssText = 'font-weight: 600; margin-bottom: 16px; font-size: 14px; color: var(--SmartThemeBodyColor); display: flex; align-items: center; gap: 8px;';
+        budgetTitle.innerHTML = '<span>📊</span> Context Budget';
+        budgetSection.appendChild(budgetTitle);
+
+        // Calculate budget values
+        const effectiveTokens = hasExclusions ? effectiveTotals.effective : summary.totalTokens;
+        const usedPercent = Math.min((effectiveTokens / maxContext) * 100, 100);
+        const availableTokens = Math.max(maxContext - effectiveTokens, 0);
+        const availablePercent = 100 - usedPercent;
+
+        // Determine color based on usage
+        let usageColor = '#10b981'; // Green
+        if (usedPercent > 90) usageColor = '#ef4444'; // Red
+        else if (usedPercent > 75) usageColor = '#f59e0b'; // Orange
+        else if (usedPercent > 50) usageColor = '#3b82f6'; // Blue
+
+        // Budget bar visualization
+        const budgetBar = document.createElement('div');
+        budgetBar.style.cssText = `
+            height: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 12px;
+        `;
+
+        const usedBar = document.createElement('div');
+        usedBar.style.cssText = `
+            height: 100%;
+            width: ${usedPercent}%;
+            background: linear-gradient(90deg, ${usageColor} 0%, ${usageColor}cc 100%);
+            border-radius: 12px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: ${usedPercent > 30 ? 'center' : 'flex-end'};
+            padding: 0 8px;
+        `;
+        usedBar.innerHTML = usedPercent > 15 ? `<span style="font-size: 11px; font-weight: 600; color: white;">${usedPercent.toFixed(1)}%</span>` : '';
+        budgetBar.appendChild(usedBar);
+        budgetSection.appendChild(budgetBar);
+
+        // Budget stats
+        const budgetStats = document.createElement('div');
+        budgetStats.style.cssText = 'display: flex; flex-direction: column; gap: 8px; font-size: 12px;';
+        budgetStats.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="opacity: 0.7;">Used</span>
+                <span style="font-weight: 600; color: ${usageColor};">${effectiveTokens.toLocaleString()} tk</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="opacity: 0.7;">Available</span>
+                <span style="font-weight: 600; color: #10b981;">${availableTokens.toLocaleString()} tk</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+                <span style="opacity: 0.7;">Max Context</span>
+                <span style="font-weight: 500;">${maxContext.toLocaleString()} tk</span>
+            </div>
+        `;
+        budgetSection.appendChild(budgetStats);
+
+        sidebar.appendChild(budgetSection);
+    }
+
     // Right content - detailed sections
     const content = document.createElement('div');
     content.className = 'ck-itemizer-content';
@@ -1839,7 +2052,7 @@ export function showTokenItemizer() {
         categorySection.className = 'ck-itemizer-category';
         categorySection.style.cssText = 'margin-bottom: 24px;';
 
-        // Category header
+        // Category header (collapsible)
         const categoryHeader = document.createElement('div');
         categoryHeader.style.cssText = `
             display: flex;
@@ -1850,26 +2063,87 @@ export function showTokenItemizer() {
             border-left: 4px solid ${categoryColor};
             border-radius: 8px;
             margin-bottom: 12px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
         `;
+        const isCategoryExcluded = excludedCategories.has(categoryName);
         categoryHeader.innerHTML = `
+            <input type="checkbox" class="category-checkbox" ${isCategoryExcluded ? '' : 'checked'} style="
+                width: 16px;
+                height: 16px;
+                cursor: pointer;
+                accent-color: ${categoryColor};
+                flex-shrink: 0;
+            " title="Include in total">
+            <span class="category-collapse-icon" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s;">▼</span>
             <span style="font-size: 18px;">${categoryIcon}</span>
-            <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor);">${categoryName}</span>
-            <span style="background: ${categoryColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+            <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); ${isCategoryExcluded ? 'opacity: 0.4; text-decoration: line-through;' : ''}">${categoryName}</span>
+            <span style="background: ${categoryColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; ${isCategoryExcluded ? 'opacity: 0.4;' : ''}">
                 ${categoryData.tokens.toLocaleString()} tokens
             </span>
             <span style="font-size: 12px; opacity: 0.7;">${categoryData.sections.length} section${categoryData.sections.length !== 1 ? 's' : ''}</span>
         `;
+
+        // Handle category exclusion checkbox
+        const categoryCheckbox = categoryHeader.querySelector('.category-checkbox');
+        categoryCheckbox.addEventListener('click', (e) => {
+            e.stopPropagation(); // Don't trigger collapse
+            if (categoryCheckbox.checked) {
+                excludedCategories.delete(categoryName);
+            } else {
+                excludedCategories.add(categoryName);
+            }
+            // Refresh modal to show updated totals
+            modal.remove();
+            showTokenItemizer();
+        });
+
+        // Hover effect
+        categoryHeader.addEventListener('mouseenter', () => {
+            categoryHeader.style.background = `${categoryColor}25`;
+        });
+        categoryHeader.addEventListener('mouseleave', () => {
+            categoryHeader.style.background = `${categoryColor}15`;
+        });
+
         categorySection.appendChild(categoryHeader);
 
         // Sections within category
         const sectionsContainer = document.createElement('div');
         sectionsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding-left: 20px;';
 
-        categoryData.sections.forEach(section => {
+        // Get the custom order for this category, or use default order
+        let orderedSections = [...categoryData.sections];
+        if (sectionOrder.has(categoryName)) {
+            const customOrder = sectionOrder.get(categoryName);
+            // Sort by custom order, putting unknown sections at the end
+            orderedSections.sort((a, b) => {
+                const aGlobalIdx = lastItemization.sections.findIndex(s => s === a);
+                const bGlobalIdx = lastItemization.sections.findIndex(s => s === b);
+                const aOrder = customOrder.indexOf(aGlobalIdx);
+                const bOrder = customOrder.indexOf(bGlobalIdx);
+                if (aOrder === -1 && bOrder === -1) return 0;
+                if (aOrder === -1) return 1;
+                if (bOrder === -1) return -1;
+                return aOrder - bOrder;
+            });
+        }
+
+        // Drag state for this category
+        let draggedEl = null;
+        let draggedGlobalIdx = null;
+
+        orderedSections.forEach((section, sectionIdx) => {
             const tagColor = TAG_COLORS[section.tag] || categoryColor;
+            // Find the global section index in lastItemization.sections
+            const globalIdx = lastItemization.sections.findIndex(s => s === section);
+            const isSectionExcluded = excludedSections.has(globalIdx) || isCategoryExcluded;
 
             const sectionEl = document.createElement('div');
             sectionEl.className = 'ck-itemizer-section';
+            sectionEl.draggable = true;
+            sectionEl.dataset.globalIdx = globalIdx;
             sectionEl.style.cssText = `
                 background: rgba(255, 255, 255, 0.03);
                 border: 1px solid rgba(255, 255, 255, 0.05);
@@ -1877,7 +2151,94 @@ export function showTokenItemizer() {
                 border-radius: 8px;
                 overflow: hidden;
                 transition: all 0.2s;
+                ${isSectionExcluded ? 'opacity: 0.4;' : ''}
             `;
+
+            // Drag event handlers
+            sectionEl.addEventListener('dragstart', (e) => {
+                draggedEl = sectionEl;
+                draggedGlobalIdx = globalIdx;
+                sectionEl.style.opacity = '0.5';
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', globalIdx.toString());
+            });
+
+            sectionEl.addEventListener('dragend', () => {
+                sectionEl.style.opacity = isSectionExcluded ? '0.4' : '1';
+                draggedEl = null;
+                draggedGlobalIdx = null;
+                // Remove all drop indicators
+                sectionsContainer.querySelectorAll('.ck-itemizer-section').forEach(el => {
+                    el.style.borderTop = '';
+                    el.style.borderBottom = '';
+                });
+            });
+
+            sectionEl.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (draggedEl && draggedEl !== sectionEl) {
+                    // Show drop indicator
+                    const rect = sectionEl.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        sectionEl.style.borderTop = '2px solid #3b82f6';
+                        sectionEl.style.borderBottom = '';
+                    } else {
+                        sectionEl.style.borderTop = '';
+                        sectionEl.style.borderBottom = '2px solid #3b82f6';
+                    }
+                }
+            });
+
+            sectionEl.addEventListener('dragleave', () => {
+                sectionEl.style.borderTop = '';
+                sectionEl.style.borderBottom = '';
+            });
+
+            sectionEl.addEventListener('drop', (e) => {
+                e.preventDefault();
+                sectionEl.style.borderTop = '';
+                sectionEl.style.borderBottom = '';
+
+                if (draggedEl && draggedEl !== sectionEl) {
+                    // Calculate drop position
+                    const rect = sectionEl.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    const insertBefore = e.clientY < midY;
+
+                    // Get current order (or create from current DOM order)
+                    let currentOrder = sectionOrder.get(categoryName);
+                    if (!currentOrder) {
+                        // Initialize with current order
+                        currentOrder = orderedSections.map(s => lastItemization.sections.findIndex(sec => sec === s));
+                    }
+
+                    // Find positions
+                    const draggedPos = currentOrder.indexOf(draggedGlobalIdx);
+                    const targetIdx = parseInt(sectionEl.dataset.globalIdx, 10);
+                    let targetPos = currentOrder.indexOf(targetIdx);
+
+                    // Remove from old position
+                    if (draggedPos !== -1) {
+                        currentOrder.splice(draggedPos, 1);
+                    }
+
+                    // Find new position (adjust if needed after removal)
+                    targetPos = currentOrder.indexOf(targetIdx);
+                    const insertPos = insertBefore ? targetPos : targetPos + 1;
+
+                    // Insert at new position
+                    currentOrder.splice(insertPos, 0, draggedGlobalIdx);
+
+                    // Save the new order
+                    sectionOrder.set(categoryName, currentOrder);
+
+                    // Refresh modal to show new order
+                    modal.remove();
+                    showTokenItemizer();
+                }
+            });
 
             // Section header - name prominent, UUID as subtle subtext
             const sectionHeader = document.createElement('div');
@@ -1898,8 +2259,23 @@ export function showTokenItemizer() {
             const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
 
             sectionHeader.innerHTML = `
+                <span class="drag-handle" style="
+                    cursor: grab;
+                    opacity: 0.3;
+                    font-size: 14px;
+                    padding: 0 4px;
+                    flex-shrink: 0;
+                    transition: opacity 0.2s;
+                " title="Drag to reorder">⋮⋮</span>
+                <input type="checkbox" class="section-checkbox" data-idx="${globalIdx}" ${isSectionExcluded ? '' : 'checked'} style="
+                    width: 14px;
+                    height: 14px;
+                    cursor: pointer;
+                    accent-color: ${tagColor};
+                    flex-shrink: 0;
+                " title="Include in total">
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
-                    <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor);">${section.name}</span>
+                    <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor); ${isSectionExcluded ? 'text-decoration: line-through;' : ''}">${section.name}</span>
                     ${isUUID ? `<span style="font-size: 9px; opacity: 0.4; font-family: monospace; letter-spacing: -0.5px;">${section.tag.toLowerCase().replace(/_/g, '-')}</span>` : ''}
                 </div>
                 ${wiPositionBadge ? `<span style="
@@ -1927,6 +2303,30 @@ export function showTokenItemizer() {
                 <span style="font-size: 12px; font-weight: 600; color: ${tagColor};">${section.tokens.toLocaleString()} tk</span>
                 <span class="expand-icon" style="opacity: 0.4; transition: transform 0.2s; font-size: 10px;">▼</span>
             `;
+
+            // Make drag handle more visible on hover
+            const dragHandle = sectionHeader.querySelector('.drag-handle');
+            sectionHeader.addEventListener('mouseenter', () => {
+                dragHandle.style.opacity = '0.7';
+            });
+            sectionHeader.addEventListener('mouseleave', () => {
+                dragHandle.style.opacity = '0.3';
+            });
+
+            // Handle section exclusion checkbox
+            const sectionCheckbox = sectionHeader.querySelector('.section-checkbox');
+            sectionCheckbox.addEventListener('click', (e) => {
+                e.stopPropagation(); // Don't trigger expand
+                const idx = parseInt(sectionCheckbox.dataset.idx, 10);
+                if (sectionCheckbox.checked) {
+                    excludedSections.delete(idx);
+                } else {
+                    excludedSections.add(idx);
+                }
+                // Refresh modal to show updated totals
+                modal.remove();
+                showTokenItemizer();
+            });
 
             // Section content (collapsed by default)
             const sectionContent = document.createElement('div');
@@ -1992,6 +2392,19 @@ export function showTokenItemizer() {
         });
 
         categorySection.appendChild(sectionsContainer);
+
+        // Category collapse toggle
+        let categoryCollapsed = false;
+        categoryHeader.addEventListener('click', () => {
+            categoryCollapsed = !categoryCollapsed;
+            sectionsContainer.style.display = categoryCollapsed ? 'none' : 'flex';
+            const icon = categoryHeader.querySelector('.category-collapse-icon');
+            if (icon) {
+                icon.style.transform = categoryCollapsed ? 'rotate(-90deg)' : 'rotate(0)';
+            }
+            categoryHeader.style.marginBottom = categoryCollapsed ? '0' : '12px';
+        });
+
         content.appendChild(categorySection);
     });
 
@@ -2146,6 +2559,21 @@ export function showTokenItemizer() {
             exportMenu.style.display = 'none';
         }
     });
+
+    // Reset button (only show if there are customizations)
+    const hasCustomizations = excludedSections.size > 0 || excludedCategories.size > 0 || sectionOrder.size > 0;
+    if (hasCustomizations) {
+        const resetBtn = document.createElement('button');
+        resetBtn.innerHTML = '↺ Reset';
+        resetBtn.title = 'Reset exclusions and custom ordering';
+        resetBtn.style.cssText = buttonStyle + 'background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4);';
+        resetBtn.addEventListener('click', () => {
+            resetExclusions();
+            modal.remove();
+            showTokenItemizer();
+        });
+        footerActions.appendChild(resetBtn);
+    }
 
     footerActions.appendChild(copyJsonBtn);
     footerActions.appendChild(copyRawBtn);
