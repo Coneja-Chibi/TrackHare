@@ -1556,15 +1556,15 @@ export function initTokenItemizer() {
  * Category colors for visual grouping
  */
 const CATEGORY_COLORS = {
-    'Character Card': { bg: '#22c55e', icon: '🎭' },  // Vibrant green
-    'Persona': { bg: '#a855f7', icon: '👤' },  // Vibrant purple
     'World Info': { bg: '#f97316', icon: '📚' },  // Orange
-    'System Prompts': { bg: '#6366f1', icon: '⚙️' },  // Indigo
-    'Extensions': { bg: '#8b5cf6', icon: '🔌' },  // Purple
-    'Chat History': { bg: '#3b82f6', icon: '💬' },  // Vibrant blue (not gray!)
-    'Preset Prompts': { bg: '#14b8a6', icon: '✨' },  // Teal
-    'Example Dialogue': { bg: '#06b6d4', icon: '📝' },  // Cyan
-    'Other': { bg: '#71717a', icon: '📄' },  // Zinc gray
+    'Preset Prompts': { bg: '#f472b6', icon: '✨' },  // Pink
+    'Character Card': { bg: '#22c55e', icon: '🎭' },  // Green
+    'Persona': { bg: '#a855f7', icon: '👤' },  // Purple
+    'Extensions': { bg: '#facc15', icon: '🔌' },  // Yellow
+    'Chat History': { bg: '#38bdf8', icon: '💬' },  // Sky blue
+    'System Prompts': { bg: '#fb7185', icon: '⚙️' },  // Rose/coral
+    'Example Dialogue': { bg: '#c084fc', icon: '📝' },  // Violet
+    'Other': { bg: '#94a3b8', icon: '📄' },  // Slate
 };
 
 /**
@@ -1835,54 +1835,39 @@ export function showTokenItemizer() {
         legendItem.style.cssText = `
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 8px 12px;
+            gap: 8px;
+            padding: 6px 10px;
             background: rgba(255, 255, 255, 0.03);
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: grab;
             transition: all 0.2s;
-            ${isExcluded ? 'opacity: 0.4;' : ''}
+            ${isExcluded ? 'opacity: 0.35;' : ''}
         `;
 
-        // Toggle switch styles
-        const toggleBg = isExcluded ? 'rgba(255,255,255,0.2)' : color;
-        const toggleKnob = isExcluded ? 'translateX(0)' : 'translateX(16px)';
-
+        // Compact design: clickable color swatch acts as toggle
         legendItem.innerHTML = `
-            <span class="legend-drag-handle" style="cursor: grab; opacity: 0.3; font-size: 12px; flex-shrink: 0;">⋮⋮</span>
-            <div class="legend-toggle" style="
-                width: 36px;
-                height: 20px;
-                background: ${toggleBg};
-                border-radius: 10px;
-                position: relative;
+            <div class="legend-toggle" title="Click to ${isExcluded ? 'include' : 'exclude'}" style="
+                width: 14px;
+                height: 14px;
+                background: ${isExcluded ? 'transparent' : color};
+                border: 2px solid ${color};
+                border-radius: 3px;
                 cursor: pointer;
-                transition: background 0.2s;
+                transition: all 0.2s;
                 flex-shrink: 0;
-            ">
-                <div style="
-                    position: absolute;
-                    top: 2px;
-                    left: 2px;
-                    width: 16px;
-                    height: 16px;
-                    background: white;
-                    border-radius: 50%;
-                    transition: transform 0.2s;
-                    transform: ${toggleKnob};
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                "></div>
-            </div>
-            <span style="font-size: 14px;">${icon}</span>
-            <span style="flex: 1; font-size: 13px; font-weight: 500; ${isExcluded ? 'text-decoration: line-through;' : ''}">${name}</span>
-            <span style="font-size: 12px; opacity: 0.7;">${data.tokens.toLocaleString()}</span>
-            <span style="font-size: 11px; background: ${color}20; color: ${color}; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${percentOfMax !== null ? percentOfMax : percentOfTotal}%</span>
+                ${isExcluded ? 'opacity: 0.5;' : ''}
+            "></div>
+            <span style="font-size: 13px;">${icon}</span>
+            <span style="flex: 1; font-size: 12px; font-weight: 500; ${isExcluded ? 'text-decoration: line-through;' : ''}">${name}</span>
+            <span style="font-size: 11px; opacity: 0.6;">${data.tokens.toLocaleString()}</span>
+            <span style="font-size: 10px; background: ${color}25; color: ${color}; padding: 2px 5px; border-radius: 3px; font-weight: 600;">${percentOfMax !== null ? percentOfMax : percentOfTotal}%</span>
         `;
 
-        // Toggle click handler
+        // Toggle click handler - clicking the swatch toggles exclusion
         const toggle = legendItem.querySelector('.legend-toggle');
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             if (excludedCategories.has(name)) {
                 excludedCategories.delete(name);
             } else {
@@ -1973,7 +1958,6 @@ export function showTokenItemizer() {
 
         legendItem.addEventListener('mouseenter', () => {
             if (!isExcluded) legendItem.style.background = 'rgba(255, 255, 255, 0.08)';
-            legendItem.querySelector('.legend-drag-handle').style.opacity = '0.7';
         });
         legendItem.addEventListener('mouseleave', () => {
             legendItem.style.background = 'rgba(255, 255, 255, 0.03)';
@@ -2290,34 +2274,18 @@ export function showTokenItemizer() {
             ${isCategoryExcluded ? 'opacity: 0.5;' : ''}
         `;
 
-        // Toggle switch for category
-        const catToggleBg = isCategoryExcluded ? 'rgba(255,255,255,0.2)' : categoryColor;
-        const catToggleKnob = isCategoryExcluded ? 'translateX(0)' : 'translateX(16px)';
-
+        // Compact toggle - clickable color swatch
         categoryHeader.innerHTML = `
-            <div class="category-toggle" style="
-                width: 36px;
-                height: 20px;
-                background: ${catToggleBg};
-                border-radius: 10px;
-                position: relative;
+            <div class="category-toggle" title="Click to ${isCategoryExcluded ? 'include' : 'exclude'}" style="
+                width: 16px;
+                height: 16px;
+                background: ${isCategoryExcluded ? 'transparent' : categoryColor};
+                border: 2px solid ${categoryColor};
+                border-radius: 4px;
                 cursor: pointer;
-                transition: background 0.2s;
+                transition: all 0.2s;
                 flex-shrink: 0;
-            ">
-                <div style="
-                    position: absolute;
-                    top: 2px;
-                    left: 2px;
-                    width: 16px;
-                    height: 16px;
-                    background: white;
-                    border-radius: 50%;
-                    transition: transform 0.2s;
-                    transform: ${catToggleKnob};
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                "></div>
-            </div>
+            "></div>
             <span class="category-collapse-icon" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s;">▼</span>
             <span style="font-size: 18px;">${categoryIcon}</span>
             <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); ${isCategoryExcluded ? 'text-decoration: line-through;' : ''}">${categoryName}</span>
@@ -2393,34 +2361,18 @@ export function showTokenItemizer() {
             const isWI = section.isWorldInfo || section.tag.startsWith('WI_');
             const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
 
-            // Toggle switch styles for section
-            const secToggleBg = isSectionExcluded ? 'rgba(255,255,255,0.2)' : tagColor;
-            const secToggleKnob = isSectionExcluded ? 'translateX(0)' : 'translateX(12px)';
-
+            // Compact toggle - small clickable swatch
             sectionHeader.innerHTML = `
-                <div class="section-toggle" data-idx="${globalIdx}" style="
-                    width: 28px;
-                    height: 16px;
-                    background: ${secToggleBg};
-                    border-radius: 8px;
-                    position: relative;
+                <div class="section-toggle" data-idx="${globalIdx}" title="Click to ${isSectionExcluded ? 'include' : 'exclude'}" style="
+                    width: 12px;
+                    height: 12px;
+                    background: ${isSectionExcluded ? 'transparent' : tagColor};
+                    border: 2px solid ${tagColor};
+                    border-radius: 3px;
                     cursor: pointer;
-                    transition: background 0.2s;
+                    transition: all 0.2s;
                     flex-shrink: 0;
-                ">
-                    <div style="
-                        position: absolute;
-                        top: 2px;
-                        left: 2px;
-                        width: 12px;
-                        height: 12px;
-                        background: white;
-                        border-radius: 50%;
-                        transition: transform 0.2s;
-                        transform: ${secToggleKnob};
-                        box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-                    "></div>
-                </div>
+                "></div>
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
                     <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor); ${isSectionExcluded ? 'text-decoration: line-through;' : ''}">${section.name}</span>
                     ${isUUID ? `<span style="font-size: 9px; opacity: 0.4; font-family: monospace; letter-spacing: -0.5px;">${section.tag.toLowerCase().replace(/_/g, '-')}</span>` : ''}
