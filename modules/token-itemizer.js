@@ -83,28 +83,43 @@ let selectedTokenizer = null;
 
 /**
  * Available tokenizers for the dropdown
- * Populated on init, excludes API-dependent tokenizers
- * @type {Array<{id: number, key: string, name: string}>}
+ * Matches ST's tokenizer options from docs: https://docs.sillytavern.app/usage/prompts/tokenizer/
+ * We can use any tokenizer for inspection regardless of API - we're just counting tokens locally
+ * @type {Array<{id: number, key: string, name: string, group?: string}>}
  */
 const AVAILABLE_TOKENIZERS = [
-    { id: tokenizers.NONE, key: 'none', name: 'None (Estimate)' },
-    { id: tokenizers.GPT2, key: 'gpt2', name: 'GPT-2' },
-    { id: tokenizers.OPENAI, key: 'openai', name: 'OpenAI (cl100k)' },
-    { id: tokenizers.LLAMA, key: 'llama', name: 'LLaMA' },
-    { id: tokenizers.LLAMA3, key: 'llama3', name: 'LLaMA 3' },
-    { id: tokenizers.MISTRAL, key: 'mistral', name: 'Mistral' },
-    { id: tokenizers.YI, key: 'yi', name: 'Yi' },
-    { id: tokenizers.CLAUDE, key: 'claude', name: 'Claude' },
-    { id: tokenizers.GEMMA, key: 'gemma', name: 'Gemma' },
-    { id: tokenizers.JAMBA, key: 'jamba', name: 'Jamba' },
-    { id: tokenizers.QWEN2, key: 'qwen2', name: 'Qwen2' },
-    { id: tokenizers.COMMAND_R, key: 'command_r', name: 'Command R' },
-    { id: tokenizers.COMMAND_A, key: 'command_a', name: 'Command A' },
-    { id: tokenizers.NEMO, key: 'nemo', name: 'Nemo' },
-    { id: tokenizers.DEEPSEEK, key: 'deepseek', name: 'DeepSeek' },
-    { id: tokenizers.NERD, key: 'nerd', name: 'NerdStash (Clio)' },
-    { id: tokenizers.NERD2, key: 'nerd2', name: 'NerdStash v2 (Kayra)' },
+    // Estimation
+    { id: tokenizers.NONE, key: 'none', name: 'None (~3.3 chars/token)', group: 'Estimation' },
+
+    // Llama family
+    { id: tokenizers.LLAMA, key: 'llama', name: 'LLaMA', group: 'LLaMA Family' },
+    { id: tokenizers.LLAMA3, key: 'llama3', name: 'LLaMA 3', group: 'LLaMA Family' },
+
+    // Mistral family
+    { id: tokenizers.MISTRAL, key: 'mistral', name: 'Mistral v1', group: 'Mistral Family' },
+    { id: tokenizers.NEMO, key: 'nemo', name: 'Mistral Nemo', group: 'Mistral Family' },
+
+    // OpenAI / tiktoken
+    { id: tokenizers.OPENAI, key: 'openai', name: 'OpenAI (cl100k/tiktoken)', group: 'OpenAI' },
+    { id: tokenizers.GPT2, key: 'gpt2', name: 'GPT-2', group: 'OpenAI' },
+
+    // Anthropic
+    { id: tokenizers.CLAUDE, key: 'claude', name: 'Claude', group: 'Anthropic' },
+
+    // NovelAI
+    { id: tokenizers.NERD, key: 'nerd', name: 'NerdStash (Clio)', group: 'NovelAI' },
+    { id: tokenizers.NERD2, key: 'nerd2', name: 'NerdStash v2 (Kayra)', group: 'NovelAI' },
+
+    // Other models (some require downloads)
+    { id: tokenizers.YI, key: 'yi', name: 'Yi', group: 'Other Models' },
+    { id: tokenizers.GEMMA, key: 'gemma', name: 'Gemma', group: 'Other Models' },
+    { id: tokenizers.QWEN2, key: 'qwen2', name: 'Qwen2 *', group: 'Other Models' },
+    { id: tokenizers.COMMAND_R, key: 'command_r', name: 'Command R *', group: 'Other Models' },
+    { id: tokenizers.COMMAND_A, key: 'command_a', name: 'Command A', group: 'Other Models' },
+    { id: tokenizers.JAMBA, key: 'jamba', name: 'Jamba', group: 'Other Models' },
+    { id: tokenizers.DEEPSEEK, key: 'deepseek', name: 'DeepSeek *', group: 'Other Models' },
 ];
+// Note: * = may require one-time download in ST
 
 /**
  * Count tokens using a specific tokenizer
@@ -1490,19 +1505,25 @@ export function showTokenItemizer() {
     if (selectedTokenizer === null) defaultOption.selected = true;
     tokenizerSelect.appendChild(defaultOption);
 
-    // Add separator
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = '──────────';
-    tokenizerSelect.appendChild(separator);
-
-    // Add all available tokenizers
+    // Add tokenizers grouped by family
+    const groups = {};
     for (const tok of AVAILABLE_TOKENIZERS) {
-        const option = document.createElement('option');
-        option.value = tok.id.toString();
-        option.textContent = tok.name;
-        if (selectedTokenizer === tok.id) option.selected = true;
-        tokenizerSelect.appendChild(option);
+        const groupName = tok.group || 'Other';
+        if (!groups[groupName]) groups[groupName] = [];
+        groups[groupName].push(tok);
+    }
+
+    for (const [groupName, toks] of Object.entries(groups)) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = groupName;
+        for (const tok of toks) {
+            const option = document.createElement('option');
+            option.value = tok.id.toString();
+            option.textContent = tok.name;
+            if (selectedTokenizer === tok.id) option.selected = true;
+            optgroup.appendChild(option);
+        }
+        tokenizerSelect.appendChild(optgroup);
     }
 
     // Handle tokenizer change
