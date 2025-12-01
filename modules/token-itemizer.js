@@ -26,6 +26,12 @@ let monkeypatchApplied = false;
 let originalGetPromptCollection = null;
 
 /**
+ * Original preparePrompt function (stored for restoration)
+ * @type {Function|null}
+ */
+let originalPreparePrompt = null;
+
+/**
  * Track original extension_prompts values for restoration
  * @type {Map<string, string>}
  */
@@ -266,8 +272,9 @@ function restoreExtensionPrompts() {
 // =============================================================================
 
 /**
- * Apply monkeypatch to promptManager.getPromptCollection
- * This intercepts prompt collection and wraps each prompt's content with markers
+ * Apply monkeypatch to promptManager methods
+ * - getPromptCollection: captures identifier → name mappings
+ * - preparePrompt: wraps content with markers (this is where content is finalized)
  */
 function applyPromptManagerPatch() {
     if (monkeypatchApplied) return;
@@ -276,17 +283,15 @@ function applyPromptManagerPatch() {
         return;
     }
 
-    // Store original function
+    // Store original functions
     originalGetPromptCollection = promptManager.getPromptCollection.bind(promptManager);
+    originalPreparePrompt = promptManager.preparePrompt.bind(promptManager);
 
-    // Apply patch
+    // Patch getPromptCollection - just capture identifier → name mappings
     promptManager.getPromptCollection = function(type) {
         const collection = originalGetPromptCollection(type);
 
-        if (markersEnabled && collection?.collection) {
-            // Clear and rebuild identifier → name mapping
-            identifierToName.clear();
-
+        if (collection?.collection) {
             for (const prompt of collection.collection) {
                 if (!prompt) continue;
 
@@ -296,37 +301,55 @@ function applyPromptManagerPatch() {
                     identifierToName.set(sanitizedId, prompt.name);
                     identifierToName.set(prompt.identifier, prompt.name);
                 }
-
-                // Wrap content with markers if it has content
-                // Skip marker prompts (they're placeholders without real content)
-                if (prompt.content?.trim() && !prompt.marker) {
-                    prompt.content = wrap(prompt.identifier, prompt.content);
-                }
             }
-
-            console.debug('[Carrot Compass] Injected markers into', collection.collection.length, 'prompt manager prompts');
         }
 
         return collection;
     };
 
+    // Patch preparePrompt - this is where content gets finalized, so wrap here
+    promptManager.preparePrompt = function(prompt, original = null) {
+        const prepared = originalPreparePrompt(prompt, original);
+
+        if (markersEnabled && prepared?.content?.trim() && !prepared.marker) {
+            // Store mapping for this prompt
+            if (prepared.identifier && prepared.name) {
+                const sanitizedId = sanitizeTag(prepared.identifier);
+                identifierToName.set(sanitizedId, prepared.name);
+                identifierToName.set(prepared.identifier, prepared.name);
+            }
+
+            // Wrap content with markers
+            prepared.content = wrap(prepared.identifier, prepared.content);
+            console.debug('[Carrot Compass] Wrapped prompt:', prepared.identifier, '→', prepared.name || prepared.identifier);
+        }
+
+        return prepared;
+    };
+
     monkeypatchApplied = true;
-    console.log('[Carrot Compass] Applied promptManager.getPromptCollection monkeypatch');
+    console.log('[Carrot Compass] Applied promptManager monkeypatches (getPromptCollection + preparePrompt)');
 }
 
 /**
- * Remove the monkeypatch and restore original function
+ * Remove the monkeypatch and restore original functions
  * Exported for potential cleanup use
  */
 export function removePromptManagerPatch() {
-    if (!monkeypatchApplied || !originalGetPromptCollection) return;
+    if (!monkeypatchApplied) return;
     if (!promptManager) return;
 
-    promptManager.getPromptCollection = originalGetPromptCollection;
-    originalGetPromptCollection = null;
-    monkeypatchApplied = false;
+    if (originalGetPromptCollection) {
+        promptManager.getPromptCollection = originalGetPromptCollection;
+        originalGetPromptCollection = null;
+    }
+    if (originalPreparePrompt) {
+        promptManager.preparePrompt = originalPreparePrompt;
+        originalPreparePrompt = null;
+    }
 
-    console.log('[Carrot Compass] Removed promptManager.getPromptCollection monkeypatch');
+    monkeypatchApplied = false;
+    console.log('[Carrot Compass] Removed promptManager monkeypatches');
 }
 
 // =============================================================================
