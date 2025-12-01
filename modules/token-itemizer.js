@@ -5,7 +5,7 @@
 
 import { event_types, eventSource, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
-import { promptManager } from '../../../../../openai.js';
+import { promptManager } from '../../../../openai.js';
 
 /**
  * Whether marker injection is enabled
