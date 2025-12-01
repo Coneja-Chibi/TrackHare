@@ -139,16 +139,17 @@ const AVAILABLE_TOKENIZERS = [
     { id: tokenizers.NERD, key: 'nerd', name: 'NerdStash (Clio)', group: 'NovelAI' },
     { id: tokenizers.NERD2, key: 'nerd2', name: 'NerdStash v2 (Kayra)', group: 'NovelAI' },
 
-    // Other models (some require downloads)
+    // Other models
     { id: tokenizers.YI, key: 'yi', name: 'Yi', group: 'Other Models' },
     { id: tokenizers.GEMMA, key: 'gemma', name: 'Gemma', group: 'Other Models' },
-    { id: tokenizers.QWEN2, key: 'qwen2', name: 'Qwen2 *', group: 'Other Models' },
-    { id: tokenizers.COMMAND_R, key: 'command_r', name: 'Command R *', group: 'Other Models' },
-    { id: tokenizers.COMMAND_A, key: 'command_a', name: 'Command A', group: 'Other Models' },
     { id: tokenizers.JAMBA, key: 'jamba', name: 'Jamba', group: 'Other Models' },
-    { id: tokenizers.DEEPSEEK, key: 'deepseek', name: 'DeepSeek *', group: 'Other Models' },
+    { id: tokenizers.COMMAND_A, key: 'command_a', name: 'Command A', group: 'Other Models' },
+
+    // These require one-time download in ST settings
+    { id: tokenizers.QWEN2, key: 'qwen2', name: 'Qwen2', group: 'Downloadable', needsDownload: true },
+    { id: tokenizers.COMMAND_R, key: 'command_r', name: 'Command R', group: 'Downloadable', needsDownload: true },
+    { id: tokenizers.DEEPSEEK, key: 'deepseek', name: 'DeepSeek', group: 'Downloadable', needsDownload: true },
 ];
-// Note: * = may require one-time download in ST
 
 /**
  * Count tokens using a specific tokenizer
@@ -177,15 +178,24 @@ async function countTokensWithTokenizer(text, tokenizerType = null) {
     try {
         // getTextTokens returns array of token IDs - length is the count
         const tokens = getTextTokens(tokenizerType, text);
-        if (Array.isArray(tokens)) {
+        if (Array.isArray(tokens) && tokens.length > 0) {
             return tokens.length;
         }
-        // If it returned something unexpected, fall back to estimate
-        console.warn('[Carrot Compass] Unexpected tokenizer response, using estimate');
-        return guesstimate(text);
+        // Empty array might mean tokenizer not available
+        if (Array.isArray(tokens) && tokens.length === 0 && text.length > 0) {
+            console.warn('[Carrot Compass] Tokenizer returned empty array - may need download');
+            throw new Error('Tokenizer may require download');
+        }
+        return tokens.length || 0;
     } catch (error) {
-        console.warn('[Carrot Compass] Tokenizer error, using estimate:', error);
-        return guesstimate(text);
+        // Check if this is a downloadable tokenizer
+        const downloadableTokenizers = [tokenizers.QWEN2, tokenizers.COMMAND_R, tokenizers.DEEPSEEK];
+        if (downloadableTokenizers.includes(tokenizerType)) {
+            const tokName = AVAILABLE_TOKENIZERS.find(t => t.id === tokenizerType)?.name || 'This tokenizer';
+            throw new Error(`${tokName} requires download. Go to ST User Settings → Tokenizer and select it once to trigger download.`);
+        }
+        console.warn('[Carrot Compass] Tokenizer error:', error);
+        throw error;
     }
 }
 
@@ -1560,13 +1570,17 @@ export function showTokenItemizer() {
 
     for (const [groupName, toks] of Object.entries(groups)) {
         const optgroup = document.createElement('optgroup');
-        optgroup.label = groupName;
+        optgroup.label = groupName === 'Downloadable' ? '📥 Downloadable (may need setup)' : groupName;
         for (const tok of toks) {
             const option = document.createElement('option');
             option.value = tok.id.toString();
-            // Mark the original tokenizer
+            // Mark the original tokenizer and downloadable ones
             const isOriginal = originalTokenizer && tok.id === originalTokenizer.id;
-            option.textContent = isOriginal ? `${tok.name} (original)` : tok.name;
+            let label = tok.name;
+            if (isOriginal) label += ' (original)';
+            if (tok.needsDownload) label += ' 📥';
+            option.textContent = label;
+            option.title = tok.needsDownload ? 'May require download in ST User Settings → Tokenizer' : '';
             if (tok.id === activeTokenizerId) option.selected = true;
             optgroup.appendChild(option);
         }
