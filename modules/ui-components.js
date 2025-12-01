@@ -5,7 +5,6 @@
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { uiState, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, MOVE_THRESHOLD, saveTriggerPosition, saveTriggerSize, loadTriggerPosition, loadTriggerSize } from './ui-state.js';
-import { showPromptInspector } from './prompt-inspector.js';
 import { showTokenItemizer, areMarkersEnabled, enableMarkers, disableMarkers } from './token-itemizer.js';
 
 // Carrot compass SVG icon
@@ -114,10 +113,6 @@ export function createConfigPanel() {
     const repositionRow = createRepositionButton();
     configPanel.appendChild(repositionRow);
 
-    // Prompt Inspector button
-    const promptRow = createPromptInspectorButton();
-    configPanel.appendChild(promptRow);
-
     // Token Itemizer button
     const tokenizerRow = createTokenItemizerButton();
     configPanel.appendChild(tokenizerRow);
@@ -216,40 +211,6 @@ function createRepositionButton() {
     });
     row.addEventListener('mouseleave', () => {
         row.style.background = '';
-    });
-
-    return row;
-}
-
-/**
- * Create prompt inspector button
- */
-function createPromptInspectorButton() {
-    const row = document.createElement('div');
-    row.classList.add('ck-config-row');
-    row.style.cssText = 'cursor: pointer; transition: background 0.2s; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);';
-
-    const label = document.createElement('span');
-    label.classList.add('ck-config-label');
-    label.textContent = '📜 Prompt Inspector';
-
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size: 11px; opacity: 0.7;';
-    hint.textContent = 'View last prompt';
-
-    row.appendChild(label);
-    row.appendChild(hint);
-
-    row.addEventListener('click', () => {
-        showPromptInspector();
-        uiState.configPanel?.classList.remove('ck-config-panel--active');
-    });
-
-    row.addEventListener('mouseenter', () => {
-        row.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
-    });
-    row.addEventListener('mouseleave', () => {
-        row.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)';
     });
 
     return row;

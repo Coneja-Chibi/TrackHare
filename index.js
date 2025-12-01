@@ -36,15 +36,6 @@ import {
     getLastVectHareSearchRaw,
 } from './modules/vecthare-integration.js';
 import {
-    initPromptInspector,
-    showPromptInspector,
-    getLastPromptData,
-    hasPromptData,
-    getLastPromptDataRaw,
-    getRawPromptText,
-    getPromptWithMetadata,
-} from './modules/prompt-inspector.js';
-import {
     initTokenItemizer,
     enableMarkers,
     disableMarkers,
@@ -162,7 +153,6 @@ async function init() {
     try {
         // Initialize tracking modules
         initVectHareIntegration();
-        initPromptInspector();
         initTriggerTracking();
         initTokenItemizer();
 
@@ -232,12 +222,6 @@ export const CarrotCompass = {
     getVectHareChunkDetails,
     getVectHareActivationHistory,
     isVectHareAvailable,
-    // Prompt Inspector
-    showPromptInspector,
-    getLastPromptData,
-    hasPromptData,
-    getRawPromptText,
-    getPromptWithMetadata,
     // Token Itemizer
     enableMarkers,
     disableMarkers,
@@ -258,8 +242,6 @@ export const CarrotCompass = {
     get recursionChain() { return getRecursionChainRaw(); },
     get probabilityResults() { return getProbabilityResultsRaw(); },
     get vectHareSearch() { return getLastVectHareSearchRaw(); },
-    get promptData() { return getLastPromptDataRaw(); },
-    get rawPrompt() { return getRawPromptText(); },
     get itemization() { return getLastItemization(); },
 };
 
