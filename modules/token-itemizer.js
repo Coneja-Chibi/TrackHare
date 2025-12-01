@@ -102,11 +102,17 @@ let excludedSections = new Set();
 let excludedCategories = new Set();
 
 /**
- * Custom section order within categories (for drag-to-reorder)
- * Map of categoryName -> array of section indices in display order
- * @type {Map<string, number[]>}
+ * Custom category display order (for drag-to-reorder in sidebar)
+ * Array of category names in display order, or null to use default
+ * @type {string[]|null}
  */
-let sectionOrder = new Map();
+let categoryOrder = null;
+
+/**
+ * Whether to show breakdown in the context budget bar
+ * @type {boolean}
+ */
+let showBudgetBreakdown = false;
 
 /**
  * Get the current ST tokenizer info (what ST is actually using)
@@ -318,7 +324,8 @@ function calculateEffectiveTotals() {
 function resetExclusions() {
     excludedSections.clear();
     excludedCategories.clear();
-    sectionOrder.clear();
+    categoryOrder = null;
+    showBudgetBreakdown = false;
 }
 
 /**
@@ -1549,15 +1556,15 @@ export function initTokenItemizer() {
  * Category colors for visual grouping
  */
 const CATEGORY_COLORS = {
-    'Character Card': { bg: '#f59e0b', icon: '🎭' },
-    'Persona': { bg: '#d946ef', icon: '👤' },  // User persona - distinct magenta color
-    'World Info': { bg: '#f97316', icon: '📚' },
-    'System Prompts': { bg: '#6366f1', icon: '⚙️' },
-    'Extensions': { bg: '#8b5cf6', icon: '🔌' },
-    'Chat History': { bg: '#64748b', icon: '💬' },
-    'Preset Prompts': { bg: '#10b981', icon: '✨' },
-    'Example Dialogue': { bg: '#06b6d4', icon: '📝' },
-    'Other': { bg: '#475569', icon: '📄' },
+    'Character Card': { bg: '#22c55e', icon: '🎭' },  // Vibrant green
+    'Persona': { bg: '#a855f7', icon: '👤' },  // Vibrant purple
+    'World Info': { bg: '#f97316', icon: '📚' },  // Orange
+    'System Prompts': { bg: '#6366f1', icon: '⚙️' },  // Indigo
+    'Extensions': { bg: '#8b5cf6', icon: '🔌' },  // Purple
+    'Chat History': { bg: '#3b82f6', icon: '💬' },  // Vibrant blue (not gray!)
+    'Preset Prompts': { bg: '#14b8a6', icon: '✨' },  // Teal
+    'Example Dialogue': { bg: '#06b6d4', icon: '📝' },  // Cyan
+    'Other': { bg: '#71717a', icon: '📄' },  // Zinc gray
 };
 
 /**
@@ -1740,7 +1747,20 @@ export function showTokenItemizer() {
 
     // Build pie chart with CSS conic-gradient
     const chart = document.createElement('div');
-    const categories = Object.entries(summary.categories);
+    let categories = Object.entries(summary.categories);
+
+    // Apply custom category order if set
+    if (categoryOrder && categoryOrder.length > 0) {
+        categories.sort((a, b) => {
+            const aIdx = categoryOrder.indexOf(a[0]);
+            const bIdx = categoryOrder.indexOf(b[0]);
+            if (aIdx === -1 && bIdx === -1) return 0;
+            if (aIdx === -1) return 1;
+            if (bIdx === -1) return -1;
+            return aIdx - bIdx;
+        });
+    }
+
     let gradientParts = [];
     let currentAngle = 0;
 
@@ -1793,16 +1813,25 @@ export function showTokenItemizer() {
     chart.appendChild(centerHole);
     chartContainer.appendChild(chart);
 
-    // Legend
+    // Legend with drag-to-reorder
     const legend = document.createElement('div');
     legend.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 16px;';
 
+    // Drag state for legend items
+    let draggedLegendItem = null;
+    let draggedCategoryName = null;
+
     categories.forEach(([name, data]) => {
-        const percentage = ((data.tokens / summary.totalTokens) * 100).toFixed(1);
+        const maxContext = getMaxContextSize();
+        const percentOfTotal = ((data.tokens / summary.totalTokens) * 100).toFixed(1);
+        const percentOfMax = maxContext > 0 ? ((data.tokens / maxContext) * 100).toFixed(1) : null;
         const color = CATEGORY_COLORS[name]?.bg || '#64748b';
         const icon = CATEGORY_COLORS[name]?.icon || '📄';
+        const isExcluded = excludedCategories.has(name);
 
         const legendItem = document.createElement('div');
+        legendItem.draggable = true;
+        legendItem.dataset.categoryName = name;
         legendItem.style.cssText = `
             display: flex;
             align-items: center;
@@ -1810,19 +1839,141 @@ export function showTokenItemizer() {
             padding: 8px 12px;
             background: rgba(255, 255, 255, 0.03);
             border-radius: 8px;
-            cursor: pointer;
+            cursor: grab;
             transition: all 0.2s;
-        `;
-        legendItem.innerHTML = `
-            <div style="width: 12px; height: 12px; border-radius: 3px; background: ${color}; flex-shrink: 0;"></div>
-            <span style="font-size: 14px;">${icon}</span>
-            <span style="flex: 1; font-size: 13px; font-weight: 500;">${name}</span>
-            <span style="font-size: 12px; opacity: 0.7;">${data.tokens.toLocaleString()}</span>
-            <span style="font-size: 11px; background: ${color}20; color: ${color}; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${percentage}%</span>
+            ${isExcluded ? 'opacity: 0.4;' : ''}
         `;
 
+        // Toggle switch styles
+        const toggleBg = isExcluded ? 'rgba(255,255,255,0.2)' : color;
+        const toggleKnob = isExcluded ? 'translateX(0)' : 'translateX(16px)';
+
+        legendItem.innerHTML = `
+            <span class="legend-drag-handle" style="cursor: grab; opacity: 0.3; font-size: 12px; flex-shrink: 0;">⋮⋮</span>
+            <div class="legend-toggle" style="
+                width: 36px;
+                height: 20px;
+                background: ${toggleBg};
+                border-radius: 10px;
+                position: relative;
+                cursor: pointer;
+                transition: background 0.2s;
+                flex-shrink: 0;
+            ">
+                <div style="
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 16px;
+                    height: 16px;
+                    background: white;
+                    border-radius: 50%;
+                    transition: transform 0.2s;
+                    transform: ${toggleKnob};
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                "></div>
+            </div>
+            <span style="font-size: 14px;">${icon}</span>
+            <span style="flex: 1; font-size: 13px; font-weight: 500; ${isExcluded ? 'text-decoration: line-through;' : ''}">${name}</span>
+            <span style="font-size: 12px; opacity: 0.7;">${data.tokens.toLocaleString()}</span>
+            <span style="font-size: 11px; background: ${color}20; color: ${color}; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${percentOfMax !== null ? percentOfMax : percentOfTotal}%</span>
+        `;
+
+        // Toggle click handler
+        const toggle = legendItem.querySelector('.legend-toggle');
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (excludedCategories.has(name)) {
+                excludedCategories.delete(name);
+            } else {
+                excludedCategories.add(name);
+            }
+            modal.remove();
+            showTokenItemizer();
+        });
+
+        // Drag event handlers for category reordering
+        legendItem.addEventListener('dragstart', (e) => {
+            draggedLegendItem = legendItem;
+            draggedCategoryName = name;
+            legendItem.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', name);
+        });
+
+        legendItem.addEventListener('dragend', () => {
+            legendItem.style.opacity = isExcluded ? '0.4' : '1';
+            draggedLegendItem = null;
+            draggedCategoryName = null;
+            legend.querySelectorAll('[data-category-name]').forEach(el => {
+                el.style.borderTop = '';
+                el.style.borderBottom = '';
+            });
+        });
+
+        legendItem.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (draggedLegendItem && draggedLegendItem !== legendItem) {
+                const rect = legendItem.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                if (e.clientY < midY) {
+                    legendItem.style.borderTop = `2px solid ${color}`;
+                    legendItem.style.borderBottom = '';
+                } else {
+                    legendItem.style.borderTop = '';
+                    legendItem.style.borderBottom = `2px solid ${color}`;
+                }
+            }
+        });
+
+        legendItem.addEventListener('dragleave', () => {
+            legendItem.style.borderTop = '';
+            legendItem.style.borderBottom = '';
+        });
+
+        legendItem.addEventListener('drop', (e) => {
+            e.preventDefault();
+            legendItem.style.borderTop = '';
+            legendItem.style.borderBottom = '';
+
+            if (draggedLegendItem && draggedLegendItem !== legendItem) {
+                const rect = legendItem.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                const insertBefore = e.clientY < midY;
+
+                // Get or create category order
+                let currentOrder = categoryOrder ? [...categoryOrder] : categories.map(c => c[0]);
+
+                // Find positions
+                const draggedPos = currentOrder.indexOf(draggedCategoryName);
+                const targetName = legendItem.dataset.categoryName;
+                let targetPos = currentOrder.indexOf(targetName);
+
+                // Remove from old position
+                if (draggedPos !== -1) {
+                    currentOrder.splice(draggedPos, 1);
+                }
+
+                // Find new position
+                targetPos = currentOrder.indexOf(targetName);
+                const insertPos = insertBefore ? targetPos : targetPos + 1;
+
+                // Insert at new position
+                currentOrder.splice(insertPos, 0, draggedCategoryName);
+
+                // Save the new order
+                categoryOrder = currentOrder;
+
+                // Refresh modal
+                modal.remove();
+                showTokenItemizer();
+            }
+        });
+
         legendItem.addEventListener('mouseenter', () => {
-            legendItem.style.background = 'rgba(255, 255, 255, 0.08)';
+            if (!isExcluded) legendItem.style.background = 'rgba(255, 255, 255, 0.08)';
+            legendItem.querySelector('.legend-drag-handle').style.opacity = '0.7';
         });
         legendItem.addEventListener('mouseleave', () => {
             legendItem.style.background = 'rgba(255, 255, 255, 0.03)';
@@ -1968,16 +2119,60 @@ export function showTokenItemizer() {
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         `;
 
+        // Title with breakdown toggle
+        const budgetHeader = document.createElement('div');
+        budgetHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;';
+
         const budgetTitle = document.createElement('div');
-        budgetTitle.style.cssText = 'font-weight: 600; margin-bottom: 16px; font-size: 14px; color: var(--SmartThemeBodyColor); display: flex; align-items: center; gap: 8px;';
+        budgetTitle.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); display: flex; align-items: center; gap: 8px;';
         budgetTitle.innerHTML = '<span>📊</span> Context Budget';
-        budgetSection.appendChild(budgetTitle);
+
+        // Breakdown toggle
+        const breakdownToggleContainer = document.createElement('div');
+        breakdownToggleContainer.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: 0.7;';
+        const breakdownToggleBg = showBudgetBreakdown ? '#10b981' : 'rgba(255,255,255,0.2)';
+        const breakdownKnob = showBudgetBreakdown ? 'translateX(12px)' : 'translateX(0)';
+        breakdownToggleContainer.innerHTML = `
+            <span>Breakdown</span>
+            <div class="breakdown-toggle" style="
+                width: 28px;
+                height: 16px;
+                background: ${breakdownToggleBg};
+                border-radius: 8px;
+                position: relative;
+                cursor: pointer;
+                transition: background 0.2s;
+            ">
+                <div style="
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 12px;
+                    height: 12px;
+                    background: white;
+                    border-radius: 50%;
+                    transition: transform 0.2s;
+                    transform: ${breakdownKnob};
+                    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+                "></div>
+            </div>
+        `;
+
+        const breakdownToggle = breakdownToggleContainer.querySelector('.breakdown-toggle');
+        breakdownToggle.addEventListener('click', () => {
+            showBudgetBreakdown = !showBudgetBreakdown;
+            modal.remove();
+            showTokenItemizer();
+        });
+
+        budgetHeader.appendChild(budgetTitle);
+        budgetHeader.appendChild(breakdownToggleContainer);
+        budgetSection.appendChild(budgetHeader);
 
         // Calculate budget values
         const effectiveTokens = hasExclusions ? effectiveTotals.effective : summary.totalTokens;
         const usedPercent = Math.min((effectiveTokens / maxContext) * 100, 100);
         const availableTokens = Math.max(maxContext - effectiveTokens, 0);
-        const availablePercent = 100 - usedPercent;
 
         // Determine color based on usage
         let usageColor = '#10b981'; // Green
@@ -1994,22 +2189,47 @@ export function showTokenItemizer() {
             overflow: hidden;
             position: relative;
             margin-bottom: 12px;
+            display: flex;
         `;
 
-        const usedBar = document.createElement('div');
-        usedBar.style.cssText = `
-            height: 100%;
-            width: ${usedPercent}%;
-            background: linear-gradient(90deg, ${usageColor} 0%, ${usageColor}cc 100%);
-            border-radius: 12px;
-            transition: width 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: ${usedPercent > 30 ? 'center' : 'flex-end'};
-            padding: 0 8px;
-        `;
-        usedBar.innerHTML = usedPercent > 15 ? `<span style="font-size: 11px; font-weight: 600; color: white;">${usedPercent.toFixed(1)}%</span>` : '';
-        budgetBar.appendChild(usedBar);
+        if (showBudgetBreakdown) {
+            // Build colored segments for each category
+            categories.forEach(([catName, catData]) => {
+                const catColor = CATEGORY_COLORS[catName]?.bg || '#64748b';
+                const catPercent = (catData.tokens / maxContext) * 100;
+                const isExcluded = excludedCategories.has(catName);
+
+                if (catPercent > 0 && !isExcluded) {
+                    const segment = document.createElement('div');
+                    segment.style.cssText = `
+                        height: 100%;
+                        width: ${catPercent}%;
+                        background: ${catColor};
+                        transition: width 0.3s ease;
+                        position: relative;
+                    `;
+                    segment.title = `${catName}: ${catData.tokens.toLocaleString()} tk (${catPercent.toFixed(1)}%)`;
+                    budgetBar.appendChild(segment);
+                }
+            });
+        } else {
+            // Simple single-color bar
+            const usedBar = document.createElement('div');
+            usedBar.style.cssText = `
+                height: 100%;
+                width: ${usedPercent}%;
+                background: linear-gradient(90deg, ${usageColor} 0%, ${usageColor}cc 100%);
+                border-radius: 12px 0 0 12px;
+                transition: width 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: ${usedPercent > 30 ? 'center' : 'flex-end'};
+                padding: 0 8px;
+            `;
+            usedBar.innerHTML = usedPercent > 15 ? `<span style="font-size: 11px; font-weight: 600; color: white;">${usedPercent.toFixed(1)}%</span>` : '';
+            budgetBar.appendChild(usedBar);
+        }
+
         budgetSection.appendChild(budgetBar);
 
         // Budget stats
@@ -2018,7 +2238,7 @@ export function showTokenItemizer() {
         budgetStats.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="opacity: 0.7;">Used</span>
-                <span style="font-weight: 600; color: ${usageColor};">${effectiveTokens.toLocaleString()} tk</span>
+                <span style="font-weight: 600; color: ${usageColor};">${effectiveTokens.toLocaleString()} tk (${usedPercent.toFixed(1)}%)</span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="opacity: 0.7;">Available</span>
@@ -2053,6 +2273,7 @@ export function showTokenItemizer() {
         categorySection.style.cssText = 'margin-bottom: 24px;';
 
         // Category header (collapsible)
+        const isCategoryExcluded = excludedCategories.has(categoryName);
         const categoryHeader = document.createElement('div');
         categoryHeader.style.cssText = `
             display: flex;
@@ -2066,42 +2287,62 @@ export function showTokenItemizer() {
             cursor: pointer;
             user-select: none;
             transition: background 0.2s;
+            ${isCategoryExcluded ? 'opacity: 0.5;' : ''}
         `;
-        const isCategoryExcluded = excludedCategories.has(categoryName);
+
+        // Toggle switch for category
+        const catToggleBg = isCategoryExcluded ? 'rgba(255,255,255,0.2)' : categoryColor;
+        const catToggleKnob = isCategoryExcluded ? 'translateX(0)' : 'translateX(16px)';
+
         categoryHeader.innerHTML = `
-            <input type="checkbox" class="category-checkbox" ${isCategoryExcluded ? '' : 'checked'} style="
-                width: 16px;
-                height: 16px;
+            <div class="category-toggle" style="
+                width: 36px;
+                height: 20px;
+                background: ${catToggleBg};
+                border-radius: 10px;
+                position: relative;
                 cursor: pointer;
-                accent-color: ${categoryColor};
+                transition: background 0.2s;
                 flex-shrink: 0;
-            " title="Include in total">
+            ">
+                <div style="
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 16px;
+                    height: 16px;
+                    background: white;
+                    border-radius: 50%;
+                    transition: transform 0.2s;
+                    transform: ${catToggleKnob};
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                "></div>
+            </div>
             <span class="category-collapse-icon" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s;">▼</span>
             <span style="font-size: 18px;">${categoryIcon}</span>
-            <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); ${isCategoryExcluded ? 'opacity: 0.4; text-decoration: line-through;' : ''}">${categoryName}</span>
-            <span style="background: ${categoryColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; ${isCategoryExcluded ? 'opacity: 0.4;' : ''}">
+            <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); ${isCategoryExcluded ? 'text-decoration: line-through;' : ''}">${categoryName}</span>
+            <span style="background: ${categoryColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">
                 ${categoryData.tokens.toLocaleString()} tokens
             </span>
             <span style="font-size: 12px; opacity: 0.7;">${categoryData.sections.length} section${categoryData.sections.length !== 1 ? 's' : ''}</span>
         `;
 
-        // Handle category exclusion checkbox
-        const categoryCheckbox = categoryHeader.querySelector('.category-checkbox');
-        categoryCheckbox.addEventListener('click', (e) => {
+        // Handle category toggle click
+        const categoryToggle = categoryHeader.querySelector('.category-toggle');
+        categoryToggle.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger collapse
-            if (categoryCheckbox.checked) {
+            if (excludedCategories.has(categoryName)) {
                 excludedCategories.delete(categoryName);
             } else {
                 excludedCategories.add(categoryName);
             }
-            // Refresh modal to show updated totals
             modal.remove();
             showTokenItemizer();
         });
 
         // Hover effect
         categoryHeader.addEventListener('mouseenter', () => {
-            categoryHeader.style.background = `${categoryColor}25`;
+            if (!isCategoryExcluded) categoryHeader.style.background = `${categoryColor}25`;
         });
         categoryHeader.addEventListener('mouseleave', () => {
             categoryHeader.style.background = `${categoryColor}15`;
@@ -2113,26 +2354,8 @@ export function showTokenItemizer() {
         const sectionsContainer = document.createElement('div');
         sectionsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding-left: 20px;';
 
-        // Get the custom order for this category, or use default order
-        let orderedSections = [...categoryData.sections];
-        if (sectionOrder.has(categoryName)) {
-            const customOrder = sectionOrder.get(categoryName);
-            // Sort by custom order, putting unknown sections at the end
-            orderedSections.sort((a, b) => {
-                const aGlobalIdx = lastItemization.sections.findIndex(s => s === a);
-                const bGlobalIdx = lastItemization.sections.findIndex(s => s === b);
-                const aOrder = customOrder.indexOf(aGlobalIdx);
-                const bOrder = customOrder.indexOf(bGlobalIdx);
-                if (aOrder === -1 && bOrder === -1) return 0;
-                if (aOrder === -1) return 1;
-                if (bOrder === -1) return -1;
-                return aOrder - bOrder;
-            });
-        }
-
-        // Drag state for this category
-        let draggedEl = null;
-        let draggedGlobalIdx = null;
+        // Use default section order (no custom ordering for individual sections)
+        const orderedSections = [...categoryData.sections];
 
         orderedSections.forEach((section, sectionIdx) => {
             const tagColor = TAG_COLORS[section.tag] || categoryColor;
@@ -2142,8 +2365,6 @@ export function showTokenItemizer() {
 
             const sectionEl = document.createElement('div');
             sectionEl.className = 'ck-itemizer-section';
-            sectionEl.draggable = true;
-            sectionEl.dataset.globalIdx = globalIdx;
             sectionEl.style.cssText = `
                 background: rgba(255, 255, 255, 0.03);
                 border: 1px solid rgba(255, 255, 255, 0.05);
@@ -2153,92 +2374,6 @@ export function showTokenItemizer() {
                 transition: all 0.2s;
                 ${isSectionExcluded ? 'opacity: 0.4;' : ''}
             `;
-
-            // Drag event handlers
-            sectionEl.addEventListener('dragstart', (e) => {
-                draggedEl = sectionEl;
-                draggedGlobalIdx = globalIdx;
-                sectionEl.style.opacity = '0.5';
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', globalIdx.toString());
-            });
-
-            sectionEl.addEventListener('dragend', () => {
-                sectionEl.style.opacity = isSectionExcluded ? '0.4' : '1';
-                draggedEl = null;
-                draggedGlobalIdx = null;
-                // Remove all drop indicators
-                sectionsContainer.querySelectorAll('.ck-itemizer-section').forEach(el => {
-                    el.style.borderTop = '';
-                    el.style.borderBottom = '';
-                });
-            });
-
-            sectionEl.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                if (draggedEl && draggedEl !== sectionEl) {
-                    // Show drop indicator
-                    const rect = sectionEl.getBoundingClientRect();
-                    const midY = rect.top + rect.height / 2;
-                    if (e.clientY < midY) {
-                        sectionEl.style.borderTop = '2px solid #3b82f6';
-                        sectionEl.style.borderBottom = '';
-                    } else {
-                        sectionEl.style.borderTop = '';
-                        sectionEl.style.borderBottom = '2px solid #3b82f6';
-                    }
-                }
-            });
-
-            sectionEl.addEventListener('dragleave', () => {
-                sectionEl.style.borderTop = '';
-                sectionEl.style.borderBottom = '';
-            });
-
-            sectionEl.addEventListener('drop', (e) => {
-                e.preventDefault();
-                sectionEl.style.borderTop = '';
-                sectionEl.style.borderBottom = '';
-
-                if (draggedEl && draggedEl !== sectionEl) {
-                    // Calculate drop position
-                    const rect = sectionEl.getBoundingClientRect();
-                    const midY = rect.top + rect.height / 2;
-                    const insertBefore = e.clientY < midY;
-
-                    // Get current order (or create from current DOM order)
-                    let currentOrder = sectionOrder.get(categoryName);
-                    if (!currentOrder) {
-                        // Initialize with current order
-                        currentOrder = orderedSections.map(s => lastItemization.sections.findIndex(sec => sec === s));
-                    }
-
-                    // Find positions
-                    const draggedPos = currentOrder.indexOf(draggedGlobalIdx);
-                    const targetIdx = parseInt(sectionEl.dataset.globalIdx, 10);
-                    let targetPos = currentOrder.indexOf(targetIdx);
-
-                    // Remove from old position
-                    if (draggedPos !== -1) {
-                        currentOrder.splice(draggedPos, 1);
-                    }
-
-                    // Find new position (adjust if needed after removal)
-                    targetPos = currentOrder.indexOf(targetIdx);
-                    const insertPos = insertBefore ? targetPos : targetPos + 1;
-
-                    // Insert at new position
-                    currentOrder.splice(insertPos, 0, draggedGlobalIdx);
-
-                    // Save the new order
-                    sectionOrder.set(categoryName, currentOrder);
-
-                    // Refresh modal to show new order
-                    modal.remove();
-                    showTokenItemizer();
-                }
-            });
 
             // Section header - name prominent, UUID as subtle subtext
             const sectionHeader = document.createElement('div');
@@ -2258,22 +2393,34 @@ export function showTokenItemizer() {
             const isWI = section.isWorldInfo || section.tag.startsWith('WI_');
             const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
 
+            // Toggle switch styles for section
+            const secToggleBg = isSectionExcluded ? 'rgba(255,255,255,0.2)' : tagColor;
+            const secToggleKnob = isSectionExcluded ? 'translateX(0)' : 'translateX(12px)';
+
             sectionHeader.innerHTML = `
-                <span class="drag-handle" style="
-                    cursor: grab;
-                    opacity: 0.3;
-                    font-size: 14px;
-                    padding: 0 4px;
-                    flex-shrink: 0;
-                    transition: opacity 0.2s;
-                " title="Drag to reorder">⋮⋮</span>
-                <input type="checkbox" class="section-checkbox" data-idx="${globalIdx}" ${isSectionExcluded ? '' : 'checked'} style="
-                    width: 14px;
-                    height: 14px;
+                <div class="section-toggle" data-idx="${globalIdx}" style="
+                    width: 28px;
+                    height: 16px;
+                    background: ${secToggleBg};
+                    border-radius: 8px;
+                    position: relative;
                     cursor: pointer;
-                    accent-color: ${tagColor};
+                    transition: background 0.2s;
                     flex-shrink: 0;
-                " title="Include in total">
+                ">
+                    <div style="
+                        position: absolute;
+                        top: 2px;
+                        left: 2px;
+                        width: 12px;
+                        height: 12px;
+                        background: white;
+                        border-radius: 50%;
+                        transition: transform 0.2s;
+                        transform: ${secToggleKnob};
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+                    "></div>
+                </div>
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
                     <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor); ${isSectionExcluded ? 'text-decoration: line-through;' : ''}">${section.name}</span>
                     ${isUUID ? `<span style="font-size: 9px; opacity: 0.4; font-family: monospace; letter-spacing: -0.5px;">${section.tag.toLowerCase().replace(/_/g, '-')}</span>` : ''}
@@ -2304,26 +2451,16 @@ export function showTokenItemizer() {
                 <span class="expand-icon" style="opacity: 0.4; transition: transform 0.2s; font-size: 10px;">▼</span>
             `;
 
-            // Make drag handle more visible on hover
-            const dragHandle = sectionHeader.querySelector('.drag-handle');
-            sectionHeader.addEventListener('mouseenter', () => {
-                dragHandle.style.opacity = '0.7';
-            });
-            sectionHeader.addEventListener('mouseleave', () => {
-                dragHandle.style.opacity = '0.3';
-            });
-
-            // Handle section exclusion checkbox
-            const sectionCheckbox = sectionHeader.querySelector('.section-checkbox');
-            sectionCheckbox.addEventListener('click', (e) => {
+            // Handle section toggle click
+            const sectionToggle = sectionHeader.querySelector('.section-toggle');
+            sectionToggle.addEventListener('click', (e) => {
                 e.stopPropagation(); // Don't trigger expand
-                const idx = parseInt(sectionCheckbox.dataset.idx, 10);
-                if (sectionCheckbox.checked) {
+                const idx = parseInt(sectionToggle.dataset.idx, 10);
+                if (excludedSections.has(idx)) {
                     excludedSections.delete(idx);
                 } else {
                     excludedSections.add(idx);
                 }
-                // Refresh modal to show updated totals
                 modal.remove();
                 showTokenItemizer();
             });
@@ -2561,7 +2698,7 @@ export function showTokenItemizer() {
     });
 
     // Reset button (only show if there are customizations)
-    const hasCustomizations = excludedSections.size > 0 || excludedCategories.size > 0 || sectionOrder.size > 0;
+    const hasCustomizations = excludedSections.size > 0 || excludedCategories.size > 0 || categoryOrder !== null || showBudgetBreakdown;
     if (hasCustomizations) {
         const resetBtn = document.createElement('button');
         resetBtn.innerHTML = '↺ Reset';
