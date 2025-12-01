@@ -323,10 +323,13 @@ function applyPromptManagerPatch() {
 
     // Patch preparePrompt - this is where content gets finalized, so wrap here
     pm.preparePrompt = function(prompt, original = null) {
+        // Log BEFORE calling original - this confirms patch is working
+        console.log('[Carrot Compass] preparePrompt INTERCEPTED:', prompt?.identifier || 'unknown');
+
         const prepared = originalPreparePrompt(prompt, original);
 
         // Debug: log all prompts passing through
-        console.debug('[Carrot Compass] preparePrompt called:', {
+        console.log('[Carrot Compass] preparePrompt called:', {
             identifier: prepared?.identifier,
             name: prepared?.name,
             hasContent: !!prepared?.content?.trim(),
@@ -346,7 +349,7 @@ function applyPromptManagerPatch() {
 
             // Wrap content with markers
             prepared.content = wrap(prepared.identifier, prepared.content);
-            console.debug('[Carrot Compass] Wrapped prompt:', prepared.identifier, '→', identifierToName.get(prepared.identifier) || prepared.identifier);
+            console.log('[Carrot Compass] WRAPPED prompt:', prepared.identifier, '→', identifierToName.get(prepared.identifier) || prepared.identifier);
         }
 
         return prepared;
