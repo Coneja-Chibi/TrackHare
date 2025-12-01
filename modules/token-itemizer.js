@@ -1643,16 +1643,16 @@ export function initTokenItemizer() {
  * Category colors for visual grouping
  */
 const CATEGORY_COLORS = {
-    // Cohesive warm-to-cool gradient palette
-    'World Info': { bg: '#e85d04', icon: '📚' },        // Burnt orange
-    'Preset Prompts': { bg: '#dc2f6f', icon: '✨' },    // Raspberry
-    'Character Card': { bg: '#9d4edd', icon: '🎭' },    // Violet
-    'Persona': { bg: '#7b2cbf', icon: '👤' },           // Deep purple
-    'Extensions': { bg: '#5a189a', icon: '🔌' },        // Royal purple
-    'Chat History': { bg: '#3c096c', icon: '💬' },      // Dark purple
-    'System Prompts': { bg: '#f72585', icon: '⚙️' },    // Hot pink
-    'Example Dialogue': { bg: '#b5179e', icon: '📝' },  // Magenta
-    'Other': { bg: '#560bad', icon: '📄' },             // Indigo
+    // Vibrant varied palette - warm oranges/reds to cool teals
+    'World Info': { bg: '#ff6b35', icon: '📚' },        // Coral orange
+    'Preset Prompts': { bg: '#e63956', icon: '✨' },    // Saturated red-pink
+    'Character Card': { bg: '#c44569', icon: '🎭' },    // Rose
+    'Persona': { bg: '#8b5cf6', icon: '👤' },           // Vivid purple
+    'Extensions': { bg: '#06b6d4', icon: '🔌' },        // Cyan
+    'Chat History': { bg: '#546e7a', icon: '💬' },      // Slate blue-gray
+    'System Prompts': { bg: '#f59e0b', icon: '⚙️' },    // Amber
+    'Example Dialogue': { bg: '#ec4899', icon: '📝' },  // Pink
+    'Other': { bg: '#6366f1', icon: '📄' },             // Indigo
 };
 
 /**
@@ -2247,10 +2247,10 @@ export function showTokenItemizer() {
         const availableTokens = Math.max(maxContext - effectiveTokens, 0);
 
         // Determine color based on usage
-        let usageColor = '#10b981'; // Green
-        if (usedPercent > 90) usageColor = '#ef4444'; // Red
-        else if (usedPercent > 75) usageColor = '#f59e0b'; // Orange
-        else if (usedPercent > 50) usageColor = '#3b82f6'; // Blue
+        let usageColor = '#14b8a6'; // Teal (low usage)
+        if (usedPercent > 90) usageColor = '#ef4444'; // Red (critical)
+        else if (usedPercent > 75) usageColor = '#f97316'; // Orange (warning)
+        else if (usedPercent > 50) usageColor = '#06b6d4'; // Cyan (moderate)
 
         // Budget bar visualization
         const budgetBar = document.createElement('div');
