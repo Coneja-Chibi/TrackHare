@@ -43,16 +43,42 @@ export function hasPromptData() {
  * @returns {string}
  */
 export function getPromptWithMetadata() {
-    if (!lastPromptData) return '';
+    if (!lastPromptData) return null;
+
+    const formatted = formatChatMessages(lastPromptData.messages || []);
+    const totalTokens = formatted.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
 
     if (lastPromptData.type === 'chat_completion') {
-        return lastPromptData.messages.map(msg => {
-            const role = msg.role?.toUpperCase() || 'UNKNOWN';
-            const name = msg.name ? ` (${msg.name})` : '';
-            return `[${role}${name}]\n${msg.content || '(empty)'}`;
-        }).join('\n\n---\n\n');
+        return {
+            exportedAt: new Date().toISOString(),
+            capturedAt: new Date(lastPromptData.timestamp).toISOString(),
+            type: 'chat_completion',
+            api: lastPromptData.api || 'openai',
+            summary: {
+                messageCount: lastPromptData.messages?.length || 0,
+                estimatedTokens: totalTokens,
+            },
+            messages: formatted.map(msg => ({
+                index: msg.index,
+                role: msg.role,
+                name: msg.name,
+                source: msg.source,
+                tokenEstimate: msg.tokenEstimate,
+                content: msg.content,
+            })),
+        };
     } else {
-        return lastPromptData.prompt || '';
+        return {
+            exportedAt: new Date().toISOString(),
+            capturedAt: new Date(lastPromptData.timestamp).toISOString(),
+            type: 'text_completion',
+            api: lastPromptData.api || 'text',
+            summary: {
+                estimatedTokens: Math.ceil((lastPromptData.prompt?.length || 0) / 4),
+                characterCount: lastPromptData.prompt?.length || 0,
+            },
+            prompt: lastPromptData.prompt || '',
+        };
     }
 }
 
@@ -80,13 +106,15 @@ export function getRawPromptText() {
  * Download text content as a file
  * @param {string} content - Text to download
  * @param {string} prefix - Filename prefix
+ * @param {string} ext - File extension (default: txt)
  */
-function downloadPrompt(content, prefix) {
-    const blob = new Blob([content], { type: 'text/plain' });
+function downloadFile(content, prefix, ext = 'txt') {
+    const mimeType = ext === 'json' ? 'application/json' : 'text/plain';
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${prefix}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.txt`;
+    a.download = `${prefix}-${Date.now()}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
     toastr.success('Prompt exported!', 'Carrot Compass');
@@ -556,14 +584,15 @@ export function showPromptInspector() {
         transition: background 0.2s;
     `;
 
-    // Copy with Metadata button - includes [ROLE] headers and separators
+    // Copy with Metadata button - JSON with full structured data
     const copyMetadataBtn = document.createElement('button');
-    copyMetadataBtn.innerHTML = '📋 Copy with Metadata';
-    copyMetadataBtn.title = 'Copy prompt with role headers and separators';
+    copyMetadataBtn.innerHTML = '📋 Copy JSON';
+    copyMetadataBtn.title = 'Copy prompt with full metadata as JSON';
     copyMetadataBtn.style.cssText = buttonStyle;
     copyMetadataBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(getPromptWithMetadata()).then(() => {
-            toastr.success('Prompt with metadata copied!', 'Carrot Compass');
+        const data = getPromptWithMetadata();
+        navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
+            toastr.success('JSON copied to clipboard!', 'Carrot Compass');
         });
     });
 
@@ -611,13 +640,14 @@ export function showPromptInspector() {
         transition: background 0.15s;
     `;
 
-    const exportWithMeta = document.createElement('div');
-    exportWithMeta.innerHTML = '📋 With Metadata (.txt)';
-    exportWithMeta.style.cssText = menuItemStyle;
-    exportWithMeta.addEventListener('mouseenter', () => exportWithMeta.style.background = 'rgba(255,255,255,0.1)');
-    exportWithMeta.addEventListener('mouseleave', () => exportWithMeta.style.background = 'transparent');
-    exportWithMeta.addEventListener('click', () => {
-        downloadPrompt(getPromptWithMetadata(), 'prompt-metadata');
+    const exportJson = document.createElement('div');
+    exportJson.innerHTML = '📋 With Metadata (.json)';
+    exportJson.style.cssText = menuItemStyle;
+    exportJson.addEventListener('mouseenter', () => exportJson.style.background = 'rgba(255,255,255,0.1)');
+    exportJson.addEventListener('mouseleave', () => exportJson.style.background = 'transparent');
+    exportJson.addEventListener('click', () => {
+        const data = getPromptWithMetadata();
+        downloadFile(JSON.stringify(data, null, 2), 'prompt-data', 'json');
         exportMenu.style.display = 'none';
     });
 
@@ -627,11 +657,11 @@ export function showPromptInspector() {
     exportRaw.addEventListener('mouseenter', () => exportRaw.style.background = 'rgba(255,255,255,0.1)');
     exportRaw.addEventListener('mouseleave', () => exportRaw.style.background = 'transparent');
     exportRaw.addEventListener('click', () => {
-        downloadPrompt(getRawPromptText(), 'prompt-raw');
+        downloadFile(getRawPromptText(), 'prompt-raw', 'txt');
         exportMenu.style.display = 'none';
     });
 
-    exportMenu.appendChild(exportWithMeta);
+    exportMenu.appendChild(exportJson);
     exportMenu.appendChild(exportRaw);
 
     // Toggle menu on click
