@@ -117,11 +117,12 @@ let showBudgetBreakdown = false;
 /**
  * Known depth-injected prompts captured before generation
  * Used to identify character notes, author's note, etc. in chat history
- * @type {{authorNote: string|null, characterDepthPrompt: string|null}}
+ * @type {{authorNote: string|null, characterDepthPrompt: string|null, prefill: string|null}}
  */
 let knownDepthPrompts = {
     authorNote: null,
     characterDepthPrompt: null,
+    prefill: null, // "Start Reply With" content
 };
 
 /**
@@ -505,6 +506,8 @@ const DISPLAY_NAMES = {
     // Depth-injected prompts (identified from content matching)
     'AUTHORSNOTE': 'Author\'s Note',
     'CHAR_DEPTH_PROMPT': 'Character Notes',
+    // Prefill (Start Reply With)
+    'PREFILL': 'Start Reply With',
 };
 
 /**
@@ -1106,9 +1109,14 @@ async function processChatCompletion(eventData) {
         knownDepthPrompts.characterDepthPrompt = null;
     }
 
+    // Prefill ("Start Reply With") from power_user settings
+    const prefillContent = context?.powerUserSettings?.user_prompt_bias;
+    knownDepthPrompts.prefill = prefillContent?.trim() || null;
+
     console.debug('[Carrot Compass] Captured depth prompts:', {
         hasAuthorNote: !!knownDepthPrompts.authorNote,
         hasCharDepthPrompt: !!knownDepthPrompts.characterDepthPrompt,
+        hasPrefill: !!knownDepthPrompts.prefill,
     });
 
     const itemization = {
@@ -1149,10 +1157,36 @@ async function processChatCompletion(eventData) {
     }
 
     // Scan all messages for markers, then strip them
-    for (const message of chat) {
+    for (let i = 0; i < chat.length; i++) {
+        const message = chat[i];
         if (!message.content) continue;
 
         const content = typeof message.content === 'string' ? message.content : String(message.content);
+
+        // Check if this is the prefill (last assistant message matching our captured prefill)
+        const isLastMessage = i === chat.length - 1;
+        if (isLastMessage && message.role === 'assistant' && knownDepthPrompts.prefill) {
+            const trimmedContent = content.trim();
+            const prefillMatch = trimmedContent === knownDepthPrompts.prefill ||
+                                 trimmedContent.includes(knownDepthPrompts.prefill) ||
+                                 knownDepthPrompts.prefill.includes(trimmedContent);
+            if (prefillMatch && trimmedContent.length > 0) {
+                const tokens = await countTokens(trimmedContent);
+                itemization.sections.push({
+                    tag: 'PREFILL',
+                    name: 'Start Reply With',
+                    content: trimmedContent,
+                    tokens,
+                    preview: trimmedContent.length > 100 ? trimmedContent.slice(0, 100) + '...' : trimmedContent,
+                    role: 'assistant',
+                    isPrefill: true,
+                });
+                itemization.totalMarkedTokens += tokens;
+                console.debug('[Carrot Compass] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
+                continue; // Don't process markers for prefill
+            }
+        }
+
         const markers = parseMarkers(content);
 
         for (const { tag, content: markerContent } of markers) {
@@ -1448,8 +1482,13 @@ function categorizeSection(section) {
         return 'Example Dialogue';
     }
 
+    // Prefill ("Start Reply With") - part of preset settings
+    if (tag === 'PREFILL') {
+        return 'Preset Prompts';
+    }
+
     // Extensions - ST built-in extension prompts
-    if (['SUMMARY', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK', 'SMARTCONTEXT', 'IMPERSONATE', 'BIAS', 'GROUPNUDGE'].includes(tag)) {
+    if (['SUMMARY', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK', 'SMARTCONTEXT', 'IMPERSONATE', 'GROUPNUDGE'].includes(tag)) {
         return 'Extensions';
     }
 
