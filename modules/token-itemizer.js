@@ -616,6 +616,61 @@ export function hasItemizationData() {
 }
 
 /**
+ * Categorize a section based on its tag and name
+ * @param {Object} section - Section with tag, name properties
+ * @returns {string} Category name
+ */
+function categorizeSection(section) {
+    const tag = section.tag.toUpperCase();
+    const name = (section.name || '').toLowerCase();
+
+    // Character Card - ST system identifiers
+    if (['CHARDESCRIPTION', 'CHARPERSONALITY', 'SCENARIO', 'PERSONADESCRIPTION'].includes(tag)) {
+        return 'Character Card';
+    }
+
+    // World Info
+    if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag.startsWith('WI_')) {
+        return 'World Info';
+    }
+
+    // Chat History - messages from conversation
+    if (tag.startsWith('CHATHISTORY')) {
+        return 'Chat History';
+    }
+
+    // Extensions - ST built-in extension prompts
+    if (['SUMMARY', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK', 'SMARTCONTEXT', 'IMPERSONATE', 'BIAS', 'GROUPNUDGE'].includes(tag)) {
+        return 'Extensions';
+    }
+
+    // System markers (main prompt, jailbreak)
+    if (['MAIN', 'JAILBREAK', 'ENHANCEDEFINITIONS', 'NSFW'].includes(tag)) {
+        return 'System Prompts';
+    }
+
+    // Extension prompt markers we inject
+    if (['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG'].includes(tag)) {
+        return 'Extensions';
+    }
+
+    // Example dialogues
+    if (tag === 'EXAMPLES' || tag === 'DIALOGUEEXAMPLES') {
+        return 'Example Dialogue';
+    }
+
+    // Check if it looks like a UUID (user-defined preset prompt)
+    // UUID pattern: 8 chars - 4 chars - 4 chars - 4 chars - 12 chars (with underscores instead of dashes)
+    const uuidPattern = /^[A-F0-9]{8}_[A-F0-9]{4}_[A-F0-9]{4}_[A-F0-9]{4}_[A-F0-9]{12}$/;
+    if (uuidPattern.test(tag)) {
+        return 'Preset Prompts';
+    }
+
+    // Fallback - anything else goes to Other
+    return 'Other';
+}
+
+/**
  * Get summary grouped by category
  * @returns {Object|null}
  */
@@ -628,36 +683,19 @@ export function getItemizationSummary() {
         categories: {},
     };
 
-    // Known tags grouped by category
-    const categoryMap = {
-        'Character Card': ['CHAR', 'PERSONALITY', 'SCENARIO', 'PERSONA', 'CHARDESCRIPTION', 'CHARPERSONALITY', 'PERSONADESCRIPTION'],
-        'World Info': ['WI_BEFORE', 'WI_AFTER', 'WORLDINFOBEFORE', 'WORLDINFOAFTER'],
-        'System Prompts': ['MAIN', 'JB', 'NSFW', 'JAILBREAK', 'ENHANCEDEFINITIONS'],
-        'Extensions': ['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK'],
-        'Chat': ['EXAMPLES', 'DIALOGUEEXAMPLES', 'CHATHISTORY'],
-    };
+    // Group sections by category
+    for (const section of lastItemization.sections) {
+        const category = categorizeSection(section);
 
-    // Build a set of all known tags
-    const allKnownTags = new Set(Object.values(categoryMap).flat());
-
-    for (const [category, tags] of Object.entries(categoryMap)) {
-        const sections = lastItemization.sections.filter(s => tags.includes(s.tag));
-        if (sections.length > 0) {
+        if (!summary.categories[category]) {
             summary.categories[category] = {
-                sections,
-                tokens: sections.reduce((sum, s) => sum + s.tokens, 0),
+                sections: [],
+                tokens: 0,
             };
         }
-    }
 
-    // Any uncategorized (user-defined prompts, unknown tags)
-    // These go into "Custom Prompts" category
-    const uncategorized = lastItemization.sections.filter(s => !allKnownTags.has(s.tag));
-    if (uncategorized.length > 0) {
-        summary.categories['Custom Prompts'] = {
-            sections: uncategorized,
-            tokens: uncategorized.reduce((sum, s) => sum + s.tokens, 0),
-        };
+        summary.categories[category].sections.push(section);
+        summary.categories[category].tokens += section.tokens;
     }
 
     return summary;
@@ -737,10 +775,10 @@ const CATEGORY_COLORS = {
     'World Info': { bg: '#f97316', icon: '📚' },
     'System Prompts': { bg: '#6366f1', icon: '⚙️' },
     'Extensions': { bg: '#8b5cf6', icon: '🔌' },
-    'Chat': { bg: '#64748b', icon: '💬' },
-    'Custom Prompts': { bg: '#10b981', icon: '✨' },
-    'Other': { bg: '#64748b', icon: '📄' },
-    'Uncategorized': { bg: '#475569', icon: '❓' },
+    'Chat History': { bg: '#64748b', icon: '💬' },
+    'Preset Prompts': { bg: '#10b981', icon: '✨' },
+    'Example Dialogue': { bg: '#06b6d4', icon: '📝' },
+    'Other': { bg: '#475569', icon: '📄' },
 };
 
 /**
