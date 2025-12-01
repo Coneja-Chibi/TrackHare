@@ -181,18 +181,24 @@ async function countTokensWithTokenizer(text, tokenizerType = null) {
         if (Array.isArray(tokens) && tokens.length > 0) {
             return tokens.length;
         }
-        // Empty array might mean tokenizer not available
+        // Empty array for non-empty text means something went wrong
         if (Array.isArray(tokens) && tokens.length === 0 && text.length > 0) {
-            console.warn('[Carrot Compass] Tokenizer returned empty array - may need download');
-            throw new Error('Tokenizer may require download');
+            // Check if this is a downloadable tokenizer
+            const tok = AVAILABLE_TOKENIZERS.find(t => t.id === tokenizerType);
+            if (tok?.needsDownload) {
+                // First call might trigger download - the server auto-downloads if enabled
+                // Give a helpful message either way
+                console.warn('[Carrot Compass] Tokenizer returned empty - may be downloading or disabled');
+                throw new Error(`${tok.name} returned no tokens. It may be downloading (try again in a moment) or downloads may be disabled in ST config.`);
+            }
+            console.warn('[Carrot Compass] Tokenizer returned empty array');
+            return 0;
         }
         return tokens.length || 0;
     } catch (error) {
-        // Check if this is a downloadable tokenizer
-        const downloadableTokenizers = [tokenizers.QWEN2, tokenizers.COMMAND_R, tokenizers.DEEPSEEK];
-        if (downloadableTokenizers.includes(tokenizerType)) {
-            const tokName = AVAILABLE_TOKENIZERS.find(t => t.id === tokenizerType)?.name || 'This tokenizer';
-            throw new Error(`${tokName} requires download. Go to ST User Settings → Tokenizer and select it once to trigger download.`);
+        const tok = AVAILABLE_TOKENIZERS.find(t => t.id === tokenizerType);
+        if (tok?.needsDownload) {
+            throw new Error(`${tok.name}: ${error.message || 'Failed'}. If downloading, wait a moment and try again.`);
         }
         console.warn('[Carrot Compass] Tokenizer error:', error);
         throw error;
