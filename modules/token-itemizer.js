@@ -1540,86 +1540,6 @@ export function showTokenItemizer() {
     const headerControls = document.createElement('div');
     headerControls.style.cssText = 'display: flex; align-items: center; gap: 12px;';
 
-    // Tokenizer selector dropdown
-    const tokenizerContainer = document.createElement('div');
-    tokenizerContainer.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-    const tokenizerLabel = document.createElement('span');
-    tokenizerLabel.textContent = '🔢';
-    tokenizerLabel.title = 'Select tokenizer for counting';
-    tokenizerLabel.style.cssText = 'font-size: 16px;';
-    tokenizerContainer.appendChild(tokenizerLabel);
-
-    const tokenizerSelect = document.createElement('select');
-    tokenizerSelect.style.cssText = `
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: var(--SmartThemeBodyColor);
-        padding: 6px 10px;
-        border-radius: 6px;
-        font-size: 12px;
-        cursor: pointer;
-        min-width: 140px;
-    `;
-
-    // Determine the currently active tokenizer ID
-    const activeTokenizerId = getActiveTokenizerId();
-
-    // Add tokenizers grouped by family
-    const groups = {};
-    for (const tok of AVAILABLE_TOKENIZERS) {
-        const groupName = tok.group || 'Other';
-        if (!groups[groupName]) groups[groupName] = [];
-        groups[groupName].push(tok);
-    }
-
-    for (const [groupName, toks] of Object.entries(groups)) {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = groupName === 'Downloadable' ? '📥 Downloadable (may need setup)' : groupName;
-        for (const tok of toks) {
-            const option = document.createElement('option');
-            option.value = tok.id.toString();
-            // Mark the original tokenizer and downloadable ones
-            const isOriginal = originalTokenizer && tok.id === originalTokenizer.id;
-            let label = tok.name;
-            if (isOriginal) label += ' (original)';
-            if (tok.needsDownload) label += ' 📥';
-            option.textContent = label;
-            option.title = tok.needsDownload ? 'May require download in ST User Settings → Tokenizer' : '';
-            if (tok.id === activeTokenizerId) option.selected = true;
-            optgroup.appendChild(option);
-        }
-        tokenizerSelect.appendChild(optgroup);
-    }
-
-    // Handle tokenizer change
-    tokenizerSelect.addEventListener('change', async () => {
-        const value = tokenizerSelect.value;
-        const newTokenizer = parseInt(value, 10);
-
-        // Show loading state
-        tokenizerSelect.disabled = true;
-        const originalText = tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent;
-        tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent = 'Calculating...';
-
-        try {
-            selectedTokenizer = newTokenizer;
-            await recalculateTokenCounts(newTokenizer);
-
-            // Refresh the modal to show new counts
-            modal.remove();
-            showTokenItemizer();
-        } catch (error) {
-            console.error('[Carrot Compass] Failed to recalculate tokens:', error);
-            tokenizerSelect.disabled = false;
-            tokenizerSelect.options[tokenizerSelect.selectedIndex].textContent = originalText;
-            toastr.error('Failed to recalculate tokens: ' + error.message, 'Carrot Compass');
-        }
-    });
-
-    tokenizerContainer.appendChild(tokenizerSelect);
-    headerControls.appendChild(tokenizerContainer);
-
     // Toggle markers button
     const toggleBtn = document.createElement('button');
     toggleBtn.innerHTML = markersEnabled ? '🔴 Markers ON' : '⚪ Markers OFF';
@@ -1786,6 +1706,160 @@ export function showTokenItemizer() {
 
     chartContainer.appendChild(legend);
     sidebar.appendChild(chartContainer);
+
+    // Tokenizer selector section
+    const tokenizerSection = document.createElement('div');
+    tokenizerSection.style.cssText = `
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    `;
+
+    const tokenizerHeader = document.createElement('div');
+    tokenizerHeader.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--SmartThemeBodyColor);
+    `;
+    tokenizerHeader.innerHTML = `<span>🔢</span> Tokenizer`;
+    tokenizerSection.appendChild(tokenizerHeader);
+
+    // Determine the currently active tokenizer ID
+    const activeTokenizerId = getActiveTokenizerId();
+    const activeTokenizerName = getSelectedTokenizerName();
+
+    // Current tokenizer display
+    const currentTokenizerDisplay = document.createElement('div');
+    currentTokenizerDisplay.style.cssText = `
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+    `;
+    const isOriginalActive = originalTokenizer && activeTokenizerId === originalTokenizer.id;
+    currentTokenizerDisplay.innerHTML = `
+        <div style="font-size: 14px; font-weight: 500; color: var(--SmartThemeBodyColor); margin-bottom: 4px;">
+            ${activeTokenizerName}
+        </div>
+        <div style="font-size: 11px; opacity: 0.6;">
+            ${isOriginalActive ? '✓ Original tokenizer used for this generation' : 'Recalculated counts'}
+        </div>
+    `;
+    tokenizerSection.appendChild(currentTokenizerDisplay);
+
+    // Tokenizer dropdown
+    const tokenizerSelect = document.createElement('select');
+    tokenizerSelect.style.cssText = `
+        width: 100%;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: var(--SmartThemeBodyColor);
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+    `;
+
+    // Flat list - no optgroups, cleaner look
+    const tokenizerGroups = [
+        { label: '── Tiktoken (OpenAI) ──', disabled: true },
+        { id: tokenizers.OPENAI, name: 'OpenAI (cl100k)' },
+        { id: tokenizers.GPT2, name: 'GPT-2' },
+        { label: '── SentencePiece ──', disabled: true },
+        { id: tokenizers.LLAMA, name: 'LLaMA' },
+        { id: tokenizers.LLAMA3, name: 'LLaMA 3' },
+        { id: tokenizers.MISTRAL, name: 'Mistral' },
+        { id: tokenizers.NEMO, name: 'Mistral Nemo' },
+        { id: tokenizers.YI, name: 'Yi' },
+        { id: tokenizers.GEMMA, name: 'Gemma' },
+        { id: tokenizers.JAMBA, name: 'Jamba' },
+        { id: tokenizers.NERD, name: 'NerdStash (Clio)' },
+        { id: tokenizers.NERD2, name: 'NerdStash v2 (Kayra)' },
+        { label: '── WebTokenizers ──', disabled: true },
+        { id: tokenizers.CLAUDE, name: 'Claude' },
+        { id: tokenizers.QWEN2, name: 'Qwen2', needsDownload: true },
+        { id: tokenizers.COMMAND_R, name: 'Command R', needsDownload: true },
+        { id: tokenizers.COMMAND_A, name: 'Command A' },
+        { id: tokenizers.DEEPSEEK, name: 'DeepSeek', needsDownload: true },
+        { label: '── Estimation ──', disabled: true },
+        { id: tokenizers.NONE, name: 'None (~3.3 chars/token)' },
+    ];
+
+    for (const item of tokenizerGroups) {
+        const option = document.createElement('option');
+        if (item.disabled) {
+            option.disabled = true;
+            option.textContent = item.label;
+            option.style.cssText = 'font-size: 11px; color: #666;';
+        } else {
+            option.value = item.id.toString();
+            const isOriginal = originalTokenizer && item.id === originalTokenizer.id;
+            let label = item.name;
+            if (isOriginal) label += ' ✓';
+            if (item.needsDownload) label += ' ↓';
+            option.textContent = label;
+            if (item.id === activeTokenizerId) option.selected = true;
+        }
+        tokenizerSelect.appendChild(option);
+    }
+
+    // Handle tokenizer change
+    tokenizerSelect.addEventListener('change', async () => {
+        const value = tokenizerSelect.value;
+        const newTokenizer = parseInt(value, 10);
+
+        // Show loading state
+        tokenizerSelect.disabled = true;
+        currentTokenizerDisplay.innerHTML = `
+            <div style="font-size: 14px; font-weight: 500; color: var(--SmartThemeBodyColor);">
+                Recalculating...
+            </div>
+            <div style="font-size: 11px; opacity: 0.6;">Please wait</div>
+        `;
+
+        try {
+            selectedTokenizer = newTokenizer;
+            await recalculateTokenCounts(newTokenizer);
+
+            // Refresh the modal to show new counts
+            modal.remove();
+            showTokenItemizer();
+        } catch (error) {
+            console.error('[Carrot Compass] Failed to recalculate tokens:', error);
+            tokenizerSelect.disabled = false;
+            currentTokenizerDisplay.innerHTML = `
+                <div style="font-size: 14px; font-weight: 500; color: #ef4444;">
+                    Error
+                </div>
+                <div style="font-size: 11px; opacity: 0.6;">${error.message}</div>
+            `;
+            toastr.error('Failed to recalculate: ' + error.message, 'Carrot Compass');
+        }
+    });
+
+    tokenizerSection.appendChild(tokenizerSelect);
+
+    // Help text
+    const helpText = document.createElement('div');
+    helpText.style.cssText = `
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.5;
+        line-height: 1.4;
+    `;
+    helpText.textContent = '✓ = original • ↓ = may need download';
+    tokenizerSection.appendChild(helpText);
+
+    sidebar.appendChild(tokenizerSection);
 
     // Right content - detailed sections
     const content = document.createElement('div');
@@ -1978,12 +2052,10 @@ export function showTokenItemizer() {
 
     const footerInfo = document.createElement('div');
     footerInfo.style.cssText = 'font-size: 12px; opacity: 0.7;';
-    const tokenizerName = getSelectedTokenizerName();
     footerInfo.innerHTML = `
         <span style="color: ${markersEnabled ? '#10b981' : '#ef4444'};">●</span>
         Marker injection: <strong>${markersEnabled ? 'Enabled' : 'Disabled'}</strong>
         ${!markersEnabled ? ' — Enable markers and regenerate to track tokens' : ''}
-        &nbsp;|&nbsp; Tokenizer: <strong>${tokenizerName}</strong>
     `;
 
     const footerActions = document.createElement('div');
