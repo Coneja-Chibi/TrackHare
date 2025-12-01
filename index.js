@@ -50,6 +50,7 @@ import {
     getLastItemization,
     hasItemizationData,
     getItemizationSummary,
+    showTokenItemizer,
 } from './modules/token-itemizer.js';
 import {
     initTriggerTracking,
@@ -234,6 +235,7 @@ export const CarrotCompass = {
     getLastItemization,
     hasItemizationData,
     getItemizationSummary,
+    showTokenItemizer,
     // Debug data access
     get deepTriggerData() { return getDeepTriggerDataRaw(); },
     get recursionChain() { return getRecursionChainRaw(); },
