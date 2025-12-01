@@ -41,6 +41,7 @@ import {
     getLastPromptData,
     hasPromptData,
     getLastPromptDataRaw,
+    getRawPromptText,
 } from './modules/prompt-inspector.js';
 import {
     initTokenItemizer,
@@ -234,6 +235,7 @@ export const CarrotCompass = {
     showPromptInspector,
     getLastPromptData,
     hasPromptData,
+    getRawPromptText,
     // Token Itemizer
     enableMarkers,
     disableMarkers,
@@ -255,6 +257,7 @@ export const CarrotCompass = {
     get probabilityResults() { return getProbabilityResultsRaw(); },
     get vectHareSearch() { return getLastVectHareSearchRaw(); },
     get promptData() { return getLastPromptDataRaw(); },
+    get rawPrompt() { return getRawPromptText(); },
     get itemization() { return getLastItemization(); },
 };
 

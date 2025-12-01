@@ -37,6 +37,26 @@ export function hasPromptData() {
 }
 
 /**
+ * Get the raw prompt as plain text
+ * For chat completion: concatenates all messages with role headers
+ * For text completion: returns the prompt as-is
+ * @returns {string}
+ */
+export function getRawPromptText() {
+    if (!lastPromptData) return '';
+
+    if (lastPromptData.type === 'chat_completion') {
+        return lastPromptData.messages.map(msg => {
+            const role = msg.role?.toUpperCase() || 'UNKNOWN';
+            const name = msg.name ? ` (${msg.name})` : '';
+            return `[${role}${name}]\n${msg.content || '(empty)'}`;
+        }).join('\n\n---\n\n');
+    } else {
+        return lastPromptData.prompt || '';
+    }
+}
+
+/**
  * Format chat messages for display with source labels
  * @param {Array} messages Chat completion messages array
  * @returns {Array} Formatted messages with metadata
@@ -489,9 +509,7 @@ export function showPromptInspector() {
         justify-content: flex-end;
     `;
 
-    const copyBtn = document.createElement('button');
-    copyBtn.innerHTML = '📋 Copy Full Prompt';
-    copyBtn.style.cssText = `
+    const buttonStyle = `
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: var(--SmartThemeBodyColor);
@@ -501,19 +519,39 @@ export function showPromptInspector() {
         font-size: 13px;
         transition: background 0.2s;
     `;
-    copyBtn.addEventListener('click', () => {
-        let textToCopy = '';
-        if (lastPromptData.type === 'chat_completion') {
-            textToCopy = JSON.stringify(lastPromptData.messages, null, 2);
-        } else {
-            textToCopy = lastPromptData.prompt;
-        }
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            toastr.success('Copied to clipboard!', 'Carrot Compass');
+
+    // Use shared function for raw prompt text
+    const buildRawPrompt = () => getRawPromptText();
+
+    // Copy Raw Prompt button (primary action)
+    const copyRawBtn = document.createElement('button');
+    copyRawBtn.innerHTML = '📋 Copy Raw Prompt';
+    copyRawBtn.style.cssText = buttonStyle;
+    copyRawBtn.addEventListener('click', () => {
+        const rawPrompt = buildRawPrompt();
+        navigator.clipboard.writeText(rawPrompt).then(() => {
+            toastr.success('Raw prompt copied to clipboard!', 'Carrot Compass');
         });
     });
 
-    actionsBar.appendChild(copyBtn);
+    // Export as file button
+    const exportBtn = document.createElement('button');
+    exportBtn.innerHTML = '📥 Export .txt';
+    exportBtn.style.cssText = buttonStyle;
+    exportBtn.addEventListener('click', () => {
+        const rawPrompt = buildRawPrompt();
+        const blob = new Blob([rawPrompt], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `prompt-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toastr.success('Prompt exported!', 'Carrot Compass');
+    });
+
+    actionsBar.appendChild(copyRawBtn);
+    actionsBar.appendChild(exportBtn);
 
     container.appendChild(header);
     container.appendChild(content);
