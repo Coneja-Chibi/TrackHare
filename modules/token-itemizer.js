@@ -1845,17 +1845,17 @@ export function showTokenItemizer() {
         `;
 
         // Compact design: clickable color swatch acts as toggle
+        // When excluded: show darker/dimmed version of the color
         legendItem.innerHTML = `
             <div class="legend-toggle" title="Click to ${isExcluded ? 'include' : 'exclude'}" style="
                 width: 14px;
                 height: 14px;
-                background: ${isExcluded ? 'transparent' : color};
-                border: 2px solid ${color};
+                background: ${isExcluded ? color + '30' : color};
+                border: 2px solid ${isExcluded ? color + '50' : color};
                 border-radius: 3px;
                 cursor: pointer;
                 transition: all 0.2s;
                 flex-shrink: 0;
-                ${isExcluded ? 'opacity: 0.5;' : ''}
             "></div>
             <span style="font-size: 13px;">${icon}</span>
             <span style="flex: 1; font-size: 12px; font-weight: 500; ${isExcluded ? 'text-decoration: line-through;' : ''}">${name}</span>
@@ -2274,18 +2274,8 @@ export function showTokenItemizer() {
             ${isCategoryExcluded ? 'opacity: 0.5;' : ''}
         `;
 
-        // Compact toggle - clickable color swatch
+        // No toggle here - use sidebar for category exclusion. Just collapse icon + info
         categoryHeader.innerHTML = `
-            <div class="category-toggle" title="Click to ${isCategoryExcluded ? 'include' : 'exclude'}" style="
-                width: 16px;
-                height: 16px;
-                background: ${isCategoryExcluded ? 'transparent' : categoryColor};
-                border: 2px solid ${categoryColor};
-                border-radius: 4px;
-                cursor: pointer;
-                transition: all 0.2s;
-                flex-shrink: 0;
-            "></div>
             <span class="category-collapse-icon" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s;">▼</span>
             <span style="font-size: 18px;">${categoryIcon}</span>
             <span style="flex: 1; font-weight: 600; font-size: 14px; color: var(--SmartThemeBodyColor); ${isCategoryExcluded ? 'text-decoration: line-through;' : ''}">${categoryName}</span>
@@ -2294,19 +2284,6 @@ export function showTokenItemizer() {
             </span>
             <span style="font-size: 12px; opacity: 0.7;">${categoryData.sections.length} section${categoryData.sections.length !== 1 ? 's' : ''}</span>
         `;
-
-        // Handle category toggle click
-        const categoryToggle = categoryHeader.querySelector('.category-toggle');
-        categoryToggle.addEventListener('click', (e) => {
-            e.stopPropagation(); // Don't trigger collapse
-            if (excludedCategories.has(categoryName)) {
-                excludedCategories.delete(categoryName);
-            } else {
-                excludedCategories.add(categoryName);
-            }
-            modal.remove();
-            showTokenItemizer();
-        });
 
         // Hover effect
         categoryHeader.addEventListener('mouseenter', () => {
@@ -2361,13 +2338,13 @@ export function showTokenItemizer() {
             const isWI = section.isWorldInfo || section.tag.startsWith('WI_');
             const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
 
-            // Compact toggle - small clickable swatch
+            // Compact toggle - small clickable swatch with dimmed color when excluded
             sectionHeader.innerHTML = `
                 <div class="section-toggle" data-idx="${globalIdx}" title="Click to ${isSectionExcluded ? 'include' : 'exclude'}" style="
                     width: 12px;
                     height: 12px;
-                    background: ${isSectionExcluded ? 'transparent' : tagColor};
-                    border: 2px solid ${tagColor};
+                    background: ${isSectionExcluded ? tagColor + '30' : tagColor};
+                    border: 2px solid ${isSectionExcluded ? tagColor + '50' : tagColor};
                     border-radius: 3px;
                     cursor: pointer;
                     transition: all 0.2s;
