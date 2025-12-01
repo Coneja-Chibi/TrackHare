@@ -279,9 +279,12 @@ function restoreExtensionPrompts() {
 function applyPromptManagerPatch() {
     if (monkeypatchApplied) return;
     if (!promptManager) {
-        console.warn('[Carrot Compass] promptManager not available for patching');
+        // promptManager might not be initialized yet - retry later
+        console.debug('[Carrot Compass] promptManager not available yet, will retry on GENERATION_STARTED');
         return;
     }
+
+    console.log('[Carrot Compass] promptManager found, applying patches...');
 
     // Store original functions
     originalGetPromptCollection = promptManager.getPromptCollection.bind(promptManager);
@@ -311,17 +314,28 @@ function applyPromptManagerPatch() {
     promptManager.preparePrompt = function(prompt, original = null) {
         const prepared = originalPreparePrompt(prompt, original);
 
+        // Debug: log all prompts passing through
+        console.debug('[Carrot Compass] preparePrompt called:', {
+            identifier: prepared?.identifier,
+            name: prepared?.name,
+            hasContent: !!prepared?.content?.trim(),
+            contentLength: prepared?.content?.length || 0,
+            marker: prepared?.marker,
+            markersEnabled,
+        });
+
         if (markersEnabled && prepared?.content?.trim() && !prepared.marker) {
-            // Store mapping for this prompt
-            if (prepared.identifier && prepared.name) {
+            // Store mapping for this prompt (use identifier as fallback name)
+            if (prepared.identifier) {
                 const sanitizedId = sanitizeTag(prepared.identifier);
-                identifierToName.set(sanitizedId, prepared.name);
-                identifierToName.set(prepared.identifier, prepared.name);
+                const displayName = prepared.name || DISPLAY_NAMES[sanitizedId] || prepared.identifier;
+                identifierToName.set(sanitizedId, displayName);
+                identifierToName.set(prepared.identifier, displayName);
             }
 
             // Wrap content with markers
             prepared.content = wrap(prepared.identifier, prepared.content);
-            console.debug('[Carrot Compass] Wrapped prompt:', prepared.identifier, '→', prepared.name || prepared.identifier);
+            console.debug('[Carrot Compass] Wrapped prompt:', prepared.identifier, '→', identifierToName.get(prepared.identifier) || prepared.identifier);
         }
 
         return prepared;
@@ -467,6 +481,8 @@ function capturePromptManagerData() {
         // Get token counts per identifier from ST's native system
         const counts = promptManager.tokenHandler?.counts || {};
 
+        console.debug('[Carrot Compass] Native ST token counts:', counts);
+
         // Get the prompt collection to get content and metadata
         const prompts = [];
         const serviceSettings = promptManager.serviceSettings;
@@ -493,6 +509,23 @@ function capturePromptManagerData() {
             }
         }
 
+        // Also add counts that aren't in serviceSettings.prompts (system prompts like charDescription)
+        const knownIdentifiers = new Set(prompts.map(p => p.identifier));
+        for (const [identifier, tokenCount] of Object.entries(counts)) {
+            if (!knownIdentifiers.has(identifier) && tokenCount > 0) {
+                prompts.push({
+                    identifier,
+                    name: DISPLAY_NAMES[sanitizeTag(identifier)] || identifier,
+                    content: '', // We don't have the content for these
+                    tokens: tokenCount,
+                    role: 'system',
+                    enabled: true,
+                    system_prompt: true,
+                    marker: false,
+                });
+            }
+        }
+
         lastPromptManagerData = {
             timestamp: Date.now(),
             counts: { ...counts },
@@ -501,6 +534,7 @@ function capturePromptManagerData() {
         };
 
         console.debug('[Carrot Compass] Captured prompt manager data:', prompts.length, 'prompts,', lastPromptManagerData.totalTokens, 'total tokens');
+        console.debug('[Carrot Compass] Prompts:', prompts.map(p => `${p.identifier}: ${p.tokens}`));
     } catch (error) {
         console.error('[Carrot Compass] Failed to capture prompt manager data:', error);
     }
@@ -616,12 +650,17 @@ export function getItemizationSummary() {
  * Initialize the token itemizer
  */
 export function initTokenItemizer() {
-    // Apply monkeypatch to promptManager (this is the key hook for prompt manager prompts)
-    // We do this on init so the patch is ready when markers are enabled
+    // Try to apply monkeypatch immediately (may fail if promptManager not ready)
     applyPromptManagerPatch();
 
-    // Inject markers at generation start (for extension_prompts)
-    eventSource.on(event_types.GENERATION_STARTED, injectExtensionPromptMarkers);
+    // Retry patch on generation start if not already applied
+    // This ensures we catch promptManager after it's been initialized
+    eventSource.on(event_types.GENERATION_STARTED, () => {
+        if (!monkeypatchApplied) {
+            applyPromptManagerPatch();
+        }
+        injectExtensionPromptMarkers();
+    });
 
     // Inject markers into story string params before combine
     eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, injectStoryStringMarkers);
