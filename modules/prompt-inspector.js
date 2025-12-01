@@ -37,12 +37,12 @@ export function hasPromptData() {
 }
 
 /**
- * Get the raw prompt as plain text
- * For chat completion: concatenates all messages with role headers
+ * Get the prompt with metadata formatting
+ * For chat completion: concatenates all messages with role headers and separators
  * For text completion: returns the prompt as-is
  * @returns {string}
  */
-export function getRawPromptText() {
+export function getPromptWithMetadata() {
     if (!lastPromptData) return '';
 
     if (lastPromptData.type === 'chat_completion') {
@@ -54,6 +54,42 @@ export function getRawPromptText() {
     } else {
         return lastPromptData.prompt || '';
     }
+}
+
+/**
+ * Get the truly raw prompt exactly as sent to the AI
+ * For chat completion: just the message contents concatenated (no role headers)
+ * For text completion: returns the prompt as-is
+ * @returns {string}
+ */
+export function getRawPromptText() {
+    if (!lastPromptData) return '';
+
+    if (lastPromptData.type === 'chat_completion') {
+        // Just the content, no metadata - this is what the AI actually "sees"
+        return lastPromptData.messages
+            .map(msg => msg.content || '')
+            .filter(content => content.length > 0)
+            .join('\n\n');
+    } else {
+        return lastPromptData.prompt || '';
+    }
+}
+
+/**
+ * Download text content as a file
+ * @param {string} content - Text to download
+ * @param {string} prefix - Filename prefix
+ */
+function downloadPrompt(content, prefix) {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${prefix}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toastr.success('Prompt exported!', 'Carrot Compass');
 }
 
 /**
@@ -520,38 +556,104 @@ export function showPromptInspector() {
         transition: background 0.2s;
     `;
 
-    // Use shared function for raw prompt text
-    const buildRawPrompt = () => getRawPromptText();
-
-    // Copy Raw Prompt button (primary action)
-    const copyRawBtn = document.createElement('button');
-    copyRawBtn.innerHTML = '📋 Copy Raw Prompt';
-    copyRawBtn.style.cssText = buttonStyle;
-    copyRawBtn.addEventListener('click', () => {
-        const rawPrompt = buildRawPrompt();
-        navigator.clipboard.writeText(rawPrompt).then(() => {
-            toastr.success('Raw prompt copied to clipboard!', 'Carrot Compass');
+    // Copy with Metadata button - includes [ROLE] headers and separators
+    const copyMetadataBtn = document.createElement('button');
+    copyMetadataBtn.innerHTML = '📋 Copy with Metadata';
+    copyMetadataBtn.title = 'Copy prompt with role headers and separators';
+    copyMetadataBtn.style.cssText = buttonStyle;
+    copyMetadataBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(getPromptWithMetadata()).then(() => {
+            toastr.success('Prompt with metadata copied!', 'Carrot Compass');
         });
     });
 
-    // Export as file button
-    const exportBtn = document.createElement('button');
-    exportBtn.innerHTML = '📥 Export .txt';
-    exportBtn.style.cssText = buttonStyle;
-    exportBtn.addEventListener('click', () => {
-        const rawPrompt = buildRawPrompt();
-        const blob = new Blob([rawPrompt], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `prompt-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
-        toastr.success('Prompt exported!', 'Carrot Compass');
+    // Copy Raw button - exactly what was sent to the AI
+    const copyRawBtn = document.createElement('button');
+    copyRawBtn.innerHTML = '📄 Copy Raw';
+    copyRawBtn.title = 'Copy the exact prompt as sent to the AI (no formatting)';
+    copyRawBtn.style.cssText = buttonStyle;
+    copyRawBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(getRawPromptText()).then(() => {
+            toastr.success('Raw prompt copied!', 'Carrot Compass');
+        });
     });
 
+    // Export dropdown for file downloads
+    const exportBtn = document.createElement('button');
+    exportBtn.innerHTML = '📥 Export';
+    exportBtn.title = 'Export prompt to file';
+    exportBtn.style.cssText = buttonStyle;
+
+    // Create export menu
+    const exportMenu = document.createElement('div');
+    exportMenu.style.cssText = `
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        margin-bottom: 4px;
+        background: var(--SmartThemeBlurTintColor, #1a1a2e);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        overflow: hidden;
+        display: none;
+        min-width: 160px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+
+    const menuItemStyle = `
+        padding: 10px 14px;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--SmartThemeBodyColor);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.15s;
+    `;
+
+    const exportWithMeta = document.createElement('div');
+    exportWithMeta.innerHTML = '📋 With Metadata (.txt)';
+    exportWithMeta.style.cssText = menuItemStyle;
+    exportWithMeta.addEventListener('mouseenter', () => exportWithMeta.style.background = 'rgba(255,255,255,0.1)');
+    exportWithMeta.addEventListener('mouseleave', () => exportWithMeta.style.background = 'transparent');
+    exportWithMeta.addEventListener('click', () => {
+        downloadPrompt(getPromptWithMetadata(), 'prompt-metadata');
+        exportMenu.style.display = 'none';
+    });
+
+    const exportRaw = document.createElement('div');
+    exportRaw.innerHTML = '📄 Raw Prompt (.txt)';
+    exportRaw.style.cssText = menuItemStyle;
+    exportRaw.addEventListener('mouseenter', () => exportRaw.style.background = 'rgba(255,255,255,0.1)');
+    exportRaw.addEventListener('mouseleave', () => exportRaw.style.background = 'transparent');
+    exportRaw.addEventListener('click', () => {
+        downloadPrompt(getRawPromptText(), 'prompt-raw');
+        exportMenu.style.display = 'none';
+    });
+
+    exportMenu.appendChild(exportWithMeta);
+    exportMenu.appendChild(exportRaw);
+
+    // Toggle menu on click
+    const exportWrapper = document.createElement('div');
+    exportWrapper.style.cssText = 'position: relative;';
+    exportWrapper.appendChild(exportBtn);
+    exportWrapper.appendChild(exportMenu);
+
+    exportBtn.addEventListener('click', () => {
+        exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!exportWrapper.contains(e.target)) {
+            exportMenu.style.display = 'none';
+        }
+    });
+
+    actionsBar.appendChild(copyMetadataBtn);
     actionsBar.appendChild(copyRawBtn);
-    actionsBar.appendChild(exportBtn);
+    actionsBar.appendChild(exportWrapper);
 
     container.appendChild(header);
     container.appendChild(content);

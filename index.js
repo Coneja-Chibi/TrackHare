@@ -42,6 +42,7 @@ import {
     hasPromptData,
     getLastPromptDataRaw,
     getRawPromptText,
+    getPromptWithMetadata,
 } from './modules/prompt-inspector.js';
 import {
     initTokenItemizer,
@@ -236,6 +237,7 @@ export const CarrotCompass = {
     getLastPromptData,
     hasPromptData,
     getRawPromptText,
+    getPromptWithMetadata,
     // Token Itemizer
     enableMarkers,
     disableMarkers,
