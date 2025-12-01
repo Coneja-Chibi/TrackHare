@@ -2021,9 +2021,7 @@ export function showTokenItemizer() {
     const footerActions = document.createElement('div');
     footerActions.style.cssText = 'display: flex; gap: 12px;';
 
-    const exportBtn = document.createElement('button');
-    exportBtn.innerHTML = '📥 Export JSON';
-    exportBtn.style.cssText = `
+    const buttonStyle = `
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: var(--SmartThemeBodyColor);
@@ -2031,19 +2029,127 @@ export function showTokenItemizer() {
         border-radius: 8px;
         cursor: pointer;
         font-size: 12px;
+        transition: background 0.2s;
     `;
-    exportBtn.addEventListener('click', () => {
-        const data = JSON.stringify(lastItemization, null, 2);
-        const blob = new Blob([data], { type: 'application/json' });
+
+    // Helper to get raw prompt text from itemization
+    const getRawPromptFromItemization = () => {
+        if (!lastItemization?.sections) return '';
+        return lastItemization.sections
+            .map(s => s.content || '')
+            .filter(c => c.length > 0)
+            .join('\n\n');
+    };
+
+    // Helper to download file
+    const downloadFile = (content, prefix, ext) => {
+        const mimeType = ext === 'json' ? 'application/json' : 'text/plain';
+        const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `token-itemization-${Date.now()}.json`;
+        a.download = `${prefix}-${Date.now()}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
-        toastr.success('Exported itemization data', 'Carrot Compass');
+        toastr.success('Exported!', 'Carrot Compass');
+    };
+
+    // Copy JSON button
+    const copyJsonBtn = document.createElement('button');
+    copyJsonBtn.innerHTML = '📋 Copy JSON';
+    copyJsonBtn.title = 'Copy itemization data with full metadata';
+    copyJsonBtn.style.cssText = buttonStyle;
+    copyJsonBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(JSON.stringify(lastItemization, null, 2)).then(() => {
+            toastr.success('JSON copied to clipboard!', 'Carrot Compass');
+        });
     });
-    footerActions.appendChild(exportBtn);
+
+    // Copy Raw button
+    const copyRawBtn = document.createElement('button');
+    copyRawBtn.innerHTML = '📄 Copy Raw';
+    copyRawBtn.title = 'Copy just the prompt text (no metadata)';
+    copyRawBtn.style.cssText = buttonStyle;
+    copyRawBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(getRawPromptFromItemization()).then(() => {
+            toastr.success('Raw prompt copied!', 'Carrot Compass');
+        });
+    });
+
+    // Export dropdown
+    const exportBtn = document.createElement('button');
+    exportBtn.innerHTML = '📥 Export';
+    exportBtn.title = 'Export to file';
+    exportBtn.style.cssText = buttonStyle;
+
+    const exportMenu = document.createElement('div');
+    exportMenu.style.cssText = `
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        margin-bottom: 4px;
+        background: var(--SmartThemeBlurTintColor, #1a1a2e);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        overflow: hidden;
+        display: none;
+        min-width: 160px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+
+    const menuItemStyle = `
+        padding: 10px 14px;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--SmartThemeBodyColor);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.15s;
+    `;
+
+    const exportJson = document.createElement('div');
+    exportJson.innerHTML = '📋 With Metadata (.json)';
+    exportJson.style.cssText = menuItemStyle;
+    exportJson.addEventListener('mouseenter', () => exportJson.style.background = 'rgba(255,255,255,0.1)');
+    exportJson.addEventListener('mouseleave', () => exportJson.style.background = 'transparent');
+    exportJson.addEventListener('click', () => {
+        downloadFile(JSON.stringify(lastItemization, null, 2), 'token-itemization', 'json');
+        exportMenu.style.display = 'none';
+    });
+
+    const exportRaw = document.createElement('div');
+    exportRaw.innerHTML = '📄 Raw Prompt (.txt)';
+    exportRaw.style.cssText = menuItemStyle;
+    exportRaw.addEventListener('mouseenter', () => exportRaw.style.background = 'rgba(255,255,255,0.1)');
+    exportRaw.addEventListener('mouseleave', () => exportRaw.style.background = 'transparent');
+    exportRaw.addEventListener('click', () => {
+        downloadFile(getRawPromptFromItemization(), 'prompt-raw', 'txt');
+        exportMenu.style.display = 'none';
+    });
+
+    exportMenu.appendChild(exportJson);
+    exportMenu.appendChild(exportRaw);
+
+    const exportWrapper = document.createElement('div');
+    exportWrapper.style.cssText = 'position: relative;';
+    exportWrapper.appendChild(exportBtn);
+    exportWrapper.appendChild(exportMenu);
+
+    exportBtn.addEventListener('click', () => {
+        exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!exportWrapper.contains(e.target)) {
+            exportMenu.style.display = 'none';
+        }
+    });
+
+    footerActions.appendChild(copyJsonBtn);
+    footerActions.appendChild(copyRawBtn);
+    footerActions.appendChild(exportWrapper);
 
     footer.appendChild(footerInfo);
     footer.appendChild(footerActions);
