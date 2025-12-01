@@ -1682,16 +1682,16 @@ export function initTokenItemizer() {
  * Category colors for visual grouping
  */
 const CATEGORY_COLORS = {
-    // Warm gradient: pinkish-orange → reds → purples
+    // Varied warm palette with distinct hues
     'World Info': { bg: '#f4845f', icon: '📚' },        // Pinkish orange / salmon
-    'Preset Prompts': { bg: '#e63956', icon: '✨' },    // Saturated red-pink (can't tell which)
-    'Character Card': { bg: '#c44569', icon: '🎭' },    // Rose
-    'Persona': { bg: '#9d4edd', icon: '👤' },           // Violet
-    'Extensions': { bg: '#7b2cbf', icon: '🔌' },        // Deep purple
-    'Chat History': { bg: '#5a189a', icon: '💬' },      // Royal purple
-    'System Prompts': { bg: '#f72585', icon: '⚙️' },    // Hot pink
-    'Example Dialogue': { bg: '#b5179e', icon: '📝' },  // Magenta
-    'Other': { bg: '#3c096c', icon: '📄' },             // Dark purple
+    'Preset Prompts': { bg: '#e05297', icon: '✨' },    // Fuchsia / hot pink
+    'Character Card': { bg: '#8b5cf6', icon: '🎭' },    // Vivid violet (distinct from pink)
+    'Persona': { bg: '#d946ef', icon: '👤' },           // Magenta / orchid
+    'Extensions': { bg: '#7c3aed', icon: '🔌' },        // Purple
+    'Chat History': { bg: '#6366f1', icon: '💬' },      // Indigo
+    'System Prompts': { bg: '#ec4899', icon: '⚙️' },    // Pink
+    'Example Dialogue': { bg: '#a855f7', icon: '📝' },  // Light purple
+    'Other': { bg: '#4f46e5', icon: '📄' },             // Deep indigo
 };
 
 /**
@@ -1942,13 +1942,13 @@ export function showTokenItemizer() {
 
     // Legend with drag-to-reorder
     const legend = document.createElement('div');
-    legend.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 16px;';
+    legend.style.cssText = 'display: flex; flex-direction: column; gap: 2px; margin-top: 16px;';
 
     // Drag state for legend items
     let draggedLegendItem = null;
     let draggedCategoryName = null;
 
-    categories.forEach(([name, data]) => {
+    categories.forEach(([name, data], index) => {
         const maxContext = getMaxContextSize();
         const percentOfTotal = ((data.tokens / summary.totalTokens) * 100).toFixed(1);
         const percentOfMax = maxContext > 0 ? ((data.tokens / maxContext) * 100).toFixed(1) : null;
@@ -1956,16 +1956,24 @@ export function showTokenItemizer() {
         const icon = CATEGORY_COLORS[name]?.icon || '📄';
         const isExcluded = excludedCategories.has(name);
 
+        // Get next category color for gradient blend
+        const nextCategory = categories[index + 1];
+        const nextColor = nextCategory ? (CATEGORY_COLORS[nextCategory[0]]?.bg || '#64748b') : color;
+
         const legendItem = document.createElement('div');
         legendItem.draggable = true;
         legendItem.dataset.categoryName = name;
+        // Subtle gradient blend from current color to next color
+        const isFirst = index === 0;
+        const isLast = index === categories.length - 1;
         legendItem.style.cssText = `
             display: flex;
             align-items: center;
             gap: 8px;
             padding: 6px 10px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 6px;
+            background: linear-gradient(180deg, ${color}15 0%, ${nextColor}15 100%);
+            border-left: 3px solid ${color};
+            border-radius: ${isFirst ? '6px 6px' : '0 0'} ${isLast ? '6px 6px' : '0 0'};
             cursor: grab;
             transition: all 0.2s;
             ${isExcluded ? 'opacity: 0.35;' : ''}
@@ -2084,10 +2092,10 @@ export function showTokenItemizer() {
         });
 
         legendItem.addEventListener('mouseenter', () => {
-            if (!isExcluded) legendItem.style.background = 'rgba(255, 255, 255, 0.08)';
+            if (!isExcluded) legendItem.style.background = `linear-gradient(180deg, ${color}25 0%, ${nextColor}25 100%)`;
         });
         legendItem.addEventListener('mouseleave', () => {
-            legendItem.style.background = 'rgba(255, 255, 255, 0.03)';
+            legendItem.style.background = `linear-gradient(180deg, ${color}15 0%, ${nextColor}15 100%)`;
         });
 
         legend.appendChild(legendItem);
