@@ -1709,72 +1709,39 @@ export function showTokenItemizer() {
 
     // Tokenizer selector section
     const tokenizerSection = document.createElement('div');
-    tokenizerSection.style.cssText = `
-        margin-top: 24px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-    `;
+    tokenizerSection.className = 'ck-tokenizer-section';
 
     const tokenizerHeader = document.createElement('div');
-    tokenizerHeader.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--SmartThemeBodyColor);
-    `;
-    tokenizerHeader.innerHTML = `<span>🔢</span> Tokenizer`;
+    tokenizerHeader.className = 'ck-tokenizer-header';
+    tokenizerHeader.innerHTML = `<span class="ck-tokenizer-header__icon">🔢</span> Tokenizer`;
     tokenizerSection.appendChild(tokenizerHeader);
 
     // Determine the currently active tokenizer ID
     const activeTokenizerId = getActiveTokenizerId();
     const activeTokenizerName = getSelectedTokenizerName();
+    const isOriginalActive = originalTokenizer && activeTokenizerId === originalTokenizer.id;
 
     // Current tokenizer display
     const currentTokenizerDisplay = document.createElement('div');
-    currentTokenizerDisplay.style.cssText = `
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 12px;
-    `;
-    const isOriginalActive = originalTokenizer && activeTokenizerId === originalTokenizer.id;
+    currentTokenizerDisplay.className = 'ck-tokenizer-current';
     currentTokenizerDisplay.innerHTML = `
-        <div style="font-size: 14px; font-weight: 500; color: var(--SmartThemeBodyColor); margin-bottom: 4px;">
-            ${activeTokenizerName}
-        </div>
-        <div style="font-size: 11px; opacity: 0.6;">
-            ${isOriginalActive ? '✓ Original tokenizer used for this generation' : 'Recalculated counts'}
+        <div class="ck-tokenizer-current__name">${activeTokenizerName}</div>
+        <div class="ck-tokenizer-current__status ${isOriginalActive ? 'ck-tokenizer-current__status--original' : 'ck-tokenizer-current__status--recalculated'}">
+            ${isOriginalActive ? '✓ Original tokenizer' : '↻ Recalculated'}
         </div>
     `;
     tokenizerSection.appendChild(currentTokenizerDisplay);
 
     // Tokenizer dropdown
     const tokenizerSelect = document.createElement('select');
-    tokenizerSelect.style.cssText = `
-        width: 100%;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: var(--SmartThemeBodyColor);
-        padding: 10px 12px;
-        border-radius: 8px;
-        font-size: 13px;
-        cursor: pointer;
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 12px center;
-    `;
+    tokenizerSelect.className = 'ck-tokenizer-select';
 
-    // Flat list - no optgroups, cleaner look
+    // Organized list with section headers
     const tokenizerGroups = [
-        { label: '── Tiktoken (OpenAI) ──', disabled: true },
+        { label: '─── Tiktoken (OpenAI) ───', disabled: true },
         { id: tokenizers.OPENAI, name: 'OpenAI (cl100k)' },
         { id: tokenizers.GPT2, name: 'GPT-2' },
-        { label: '── SentencePiece ──', disabled: true },
+        { label: '─── SentencePiece ───', disabled: true },
         { id: tokenizers.LLAMA, name: 'LLaMA' },
         { id: tokenizers.LLAMA3, name: 'LLaMA 3' },
         { id: tokenizers.MISTRAL, name: 'Mistral' },
@@ -1784,13 +1751,13 @@ export function showTokenItemizer() {
         { id: tokenizers.JAMBA, name: 'Jamba' },
         { id: tokenizers.NERD, name: 'NerdStash (Clio)' },
         { id: tokenizers.NERD2, name: 'NerdStash v2 (Kayra)' },
-        { label: '── WebTokenizers ──', disabled: true },
+        { label: '─── WebTokenizers ───', disabled: true },
         { id: tokenizers.CLAUDE, name: 'Claude' },
         { id: tokenizers.QWEN2, name: 'Qwen2', needsDownload: true },
         { id: tokenizers.COMMAND_R, name: 'Command R', needsDownload: true },
         { id: tokenizers.COMMAND_A, name: 'Command A' },
         { id: tokenizers.DEEPSEEK, name: 'DeepSeek', needsDownload: true },
-        { label: '── Estimation ──', disabled: true },
+        { label: '─── Estimation ───', disabled: true },
         { id: tokenizers.NONE, name: 'None (~3.3 chars/token)' },
     ];
 
@@ -1799,7 +1766,6 @@ export function showTokenItemizer() {
         if (item.disabled) {
             option.disabled = true;
             option.textContent = item.label;
-            option.style.cssText = 'font-size: 11px; color: #666;';
         } else {
             option.value = item.id.toString();
             const isOriginal = originalTokenizer && item.id === originalTokenizer.id;
@@ -1820,10 +1786,8 @@ export function showTokenItemizer() {
         // Show loading state
         tokenizerSelect.disabled = true;
         currentTokenizerDisplay.innerHTML = `
-            <div style="font-size: 14px; font-weight: 500; color: var(--SmartThemeBodyColor);">
-                Recalculating...
-            </div>
-            <div style="font-size: 11px; opacity: 0.6;">Please wait</div>
+            <div class="ck-tokenizer-current__name">Recalculating...</div>
+            <div class="ck-tokenizer-current__status">Please wait</div>
         `;
 
         try {
@@ -1837,10 +1801,8 @@ export function showTokenItemizer() {
             console.error('[Carrot Compass] Failed to recalculate tokens:', error);
             tokenizerSelect.disabled = false;
             currentTokenizerDisplay.innerHTML = `
-                <div style="font-size: 14px; font-weight: 500; color: #ef4444;">
-                    Error
-                </div>
-                <div style="font-size: 11px; opacity: 0.6;">${error.message}</div>
+                <div class="ck-tokenizer-current__name" style="color: #ef4444;">Error</div>
+                <div class="ck-tokenizer-current__status">${error.message}</div>
             `;
             toastr.error('Failed to recalculate: ' + error.message, 'Carrot Compass');
         }
@@ -1850,13 +1812,11 @@ export function showTokenItemizer() {
 
     // Help text
     const helpText = document.createElement('div');
-    helpText.style.cssText = `
-        margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.5;
-        line-height: 1.4;
+    helpText.className = 'ck-tokenizer-help';
+    helpText.innerHTML = `
+        <span class="ck-tokenizer-help__item ck-tokenizer-help__item--original">✓ original</span>
+        <span class="ck-tokenizer-help__item ck-tokenizer-help__item--download">↓ needs download</span>
     `;
-    helpText.textContent = '✓ = original • ↓ = may need download';
     tokenizerSection.appendChild(helpText);
 
     sidebar.appendChild(tokenizerSection);

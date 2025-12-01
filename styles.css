@@ -1152,3 +1152,132 @@
     font-size: 10px;
     display: inline-block;
 }
+
+/* ===== Token Itemizer - Tokenizer Selector ===== */
+.ck-tokenizer-section {
+    margin-top: var(--ck-spacing-xl);
+    padding-top: var(--ck-spacing-lg);
+    border-top: 1px solid var(--ck-glass-light);
+}
+
+.ck-tokenizer-header {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    margin-bottom: var(--ck-spacing-md);
+    font-size: var(--ck-text-md);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+}
+
+.ck-tokenizer-header__icon {
+    font-size: var(--ck-text-lg);
+    opacity: 0.8;
+}
+
+.ck-tokenizer-current {
+    background: var(--ck-glass-light);
+    border: 1px solid var(--ck-glass-medium);
+    border-radius: var(--ck-radius-md);
+    padding: var(--ck-spacing-md);
+    margin-bottom: var(--ck-spacing-md);
+    transition: var(--ck-transition-smooth);
+}
+
+.ck-tokenizer-current:hover {
+    background: var(--ck-glass-medium);
+    border-color: var(--ck-primary-alpha);
+}
+
+.ck-tokenizer-current__name {
+    font-size: var(--ck-text-lg);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    margin-bottom: var(--ck-spacing-xs);
+}
+
+.ck-tokenizer-current__status {
+    font-size: var(--ck-text-xs);
+    opacity: 0.6;
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-xs);
+}
+
+.ck-tokenizer-current__status--original {
+    color: #10b981;
+    opacity: 1;
+}
+
+.ck-tokenizer-current__status--recalculated {
+    color: var(--ck-primary);
+    opacity: 0.8;
+}
+
+.ck-tokenizer-select {
+    width: 100%;
+    background: var(--ck-glass-light);
+    border: 1px solid var(--ck-glass-medium);
+    color: var(--SmartThemeBodyColor);
+    padding: var(--ck-spacing-md);
+    border-radius: var(--ck-radius-md);
+    font-size: var(--ck-text-md);
+    cursor: pointer;
+    transition: var(--ck-transition-smooth);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--ck-spacing-md) center;
+}
+
+.ck-tokenizer-select:hover {
+    border-color: var(--ck-primary-alpha-heavy);
+    background-color: var(--ck-glass-medium);
+}
+
+.ck-tokenizer-select:focus {
+    outline: none;
+    border-color: var(--ck-primary);
+    box-shadow: 0 0 0 3px var(--ck-primary-alpha);
+}
+
+.ck-tokenizer-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ck-tokenizer-select option {
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    padding: var(--ck-spacing-sm);
+}
+
+.ck-tokenizer-select option:disabled {
+    color: var(--SmartThemeEmColor);
+    font-size: var(--ck-text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ck-tokenizer-help {
+    margin-top: var(--ck-spacing-sm);
+    font-size: var(--ck-text-xs);
+    opacity: 0.5;
+    line-height: 1.4;
+}
+
+.ck-tokenizer-help__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ck-spacing-xs);
+    margin-right: var(--ck-spacing-md);
+}
+
+.ck-tokenizer-help__item--original {
+    color: #10b981;
+}
+
+.ck-tokenizer-help__item--download {
+    color: var(--ck-primary);
+}
