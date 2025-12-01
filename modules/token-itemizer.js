@@ -3,10 +3,12 @@
 // Injects <<TAG>>content<</TAG>> markers, parses from final prompt
 // =============================================================================
 
-import { event_types, eventSource, extension_prompts } from '../../../../../script.js';
-import { getContext } from '../../../../extensions.js';
+import { event_types, eventSource, extension_prompts, saveSettingsDebounced } from '../../../../../script.js';
+import { getContext, extension_settings } from '../../../../extensions.js';
 // Import entire module to ensure live binding access
 import * as openai from '../../../../openai.js';
+// Import shared UI state for access to tracked WI entries
+import { uiState } from './ui-state.js';
 
 /**
  * Get promptManager dynamically (it's null at load time, created later by ST)
@@ -21,6 +23,12 @@ function getPromptManager() {
  * @type {boolean}
  */
 let markersEnabled = false;
+
+/**
+ * Whether the current generation is a dry run (skip marker injection)
+ * @type {boolean}
+ */
+let isDryRun = false;
 
 /**
  * Whether the monkeypatch has been applied
@@ -58,11 +66,74 @@ let lastItemization = null;
  */
 let lastPromptManagerData = null;
 
+
 /**
  * Dynamic mapping of identifier → friendly name (populated from promptManager)
  * @type {Map<string, string>}
  */
 const identifierToName = new Map();
+
+/**
+ * Metadata storage for prompt properties
+ * Maps sanitized tag → { isSystemPrompt, isMarker, isUserPrompt, originalIdentifier, sources }
+ * @type {Map<string, Object>}
+ */
+const promptMetadata = new Map();
+
+/**
+ * Macro patterns that indicate content sources
+ * Maps macro pattern → source category
+ * These are detected BEFORE macro expansion to categorize preset prompts by what they inject
+ */
+const MACRO_SOURCES = {
+    // User persona - highest priority for categorization
+    '{{persona}}': 'persona',
+    '{{personaDescription}}': 'persona',
+
+    // Character card content
+    '{{description}}': 'character',
+    '{{personality}}': 'character',
+    '{{scenario}}': 'character',
+    '{{charDescription}}': 'character',
+    '{{charPersonality}}': 'character',
+
+    // Example dialogue
+    '{{mesExamples}}': 'examples',
+    '{{mesExamplesRaw}}': 'examples',
+
+    // System instructions from character card
+    '{{charPrompt}}': 'system',
+    '{{charJailbreak}}': 'system',
+    '{{charInstruction}}': 'system',
+    '{{systemPrompt}}': 'system',
+
+    // World info (in case someone uses these in custom prompts)
+    '{{worldInfoBefore}}': 'worldinfo',
+    '{{worldInfoAfter}}': 'worldinfo',
+
+    // Name macros - these are used everywhere, so lowest priority
+    // Only categorize if NO other sources detected
+    '{{char}}': 'character_name',
+    '{{user}}': 'user_name',
+};
+
+/**
+ * Detect what sources a prompt template uses based on macros
+ * @param {string} content - The prompt content (before macro expansion)
+ * @returns {Set<string>} Set of source categories detected
+ */
+function detectMacroSources(content) {
+    const sources = new Set();
+    if (!content) return sources;
+
+    for (const [macro, source] of Object.entries(MACRO_SOURCES)) {
+        if (content.includes(macro)) {
+            sources.add(source);
+        }
+    }
+
+    return sources;
+}
 
 /**
  * Marker mappings for extension_prompts
@@ -131,6 +202,28 @@ function wrap(tag, content) {
 }
 
 /**
+ * Get a readable position name for a WI entry based on ST's position constants
+ * @param {number} position - ST position value (0=before, 1=after, 2=ANTop, 3=ANBottom, 4=atDepth, etc.)
+ * @param {number} depth - Depth value for atDepth entries
+ * @returns {string} Position name like "BEFORE", "AFTER", "DEPTH_4"
+ */
+function getWIPositionName(position, depth) {
+    // ST world info position constants
+    switch (position) {
+        case 0: return 'BEFORE';
+        case 1: return 'AFTER';
+        case 2: return 'AN_TOP';
+        case 3: return 'AN_BOTTOM';
+        case 4: return 'AT_DEPTH';
+        case 5: return `DEPTH_${depth ?? 0}`;
+        case 6: return 'BEFORE_CHAR';
+        case 7: return 'AFTER_CHAR';
+        default: return `POS_${position}`;
+    }
+}
+
+
+/**
  * Parse all markers from text
  * Handles any alphanumeric identifier with underscores
  * @param {string} text
@@ -174,6 +267,15 @@ function getDisplayName(tag) {
     if (DISPLAY_NAMES[tag]) {
         return DISPLAY_NAMES[tag];
     }
+
+    // Handle WI position tags (WI_BEFORE, WI_AFTER, WI_DEPTH_4, etc.)
+    // These are now just position indicators - the actual name comes from the section.name field
+    if (tag.startsWith('WI_')) {
+        // Return a readable position name as fallback (actual entry name is in section.name)
+        const positionPart = tag.substring(3); // Remove "WI_"
+        return positionPart.replace(/_/g, ' ');
+    }
+
     // Format tag as readable name (replace underscores, title case)
     return tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\b\w+/g, w => w.charAt(0) + w.slice(1).toLowerCase());
 }
@@ -194,9 +296,10 @@ function stripMarkers(text) {
 
 /**
  * Inject markers into extension_prompts on GENERATION_STARTED
+ * Skips injection if this is a dry run
  */
 function injectExtensionPromptMarkers() {
-    if (!markersEnabled) return;
+    if (!markersEnabled || isDryRun) return;
 
     originalExtPrompts.clear();
 
@@ -213,10 +316,11 @@ function injectExtensionPromptMarkers() {
 
 /**
  * Inject markers into story string params on GENERATE_BEFORE_COMBINE_PROMPTS
+ * Skips injection if this is a dry run
  * @param {Object} data - Event data containing all prompt pieces
  */
 function injectStoryStringMarkers(data) {
-    if (!markersEnabled) return;
+    if (!markersEnabled || isDryRun) return;
 
     // Character card fields
     if (data.description?.trim()) {
@@ -232,13 +336,8 @@ function injectStoryStringMarkers(data) {
         data.scenario = wrap('SCENARIO', data.scenario);
     }
 
-    // World Info
-    if (data.worldInfoBefore?.trim()) {
-        data.worldInfoBefore = wrap('WI_BEFORE', data.worldInfoBefore);
-    }
-    if (data.worldInfoAfter?.trim()) {
-        data.worldInfoAfter = wrap('WI_AFTER', data.worldInfoAfter);
-    }
+    // World Info - don't wrap the combined blobs, we'll add entries directly from uiState.currentEntryList
+    // Just leave worldInfoBefore/After unwrapped - the processChatCompletion will handle WI entries separately
 
     // Anchors (extension prompts injected at specific positions)
     if (data.beforeScenarioAnchor?.trim()) {
@@ -326,6 +425,13 @@ function applyPromptManagerPatch() {
         // Log BEFORE calling original - this confirms patch is working
         console.log('[Carrot Compass] preparePrompt INTERCEPTED:', prompt?.identifier || 'unknown');
 
+        // IMPORTANT: Detect macro sources BEFORE calling originalPreparePrompt
+        // because substituteParams() will expand the macros and we'll lose the template
+        const macroSources = prompt?.content ? detectMacroSources(prompt.content) : new Set();
+        if (macroSources.size > 0) {
+            console.log('[Carrot Compass] Detected macro sources in', prompt?.identifier, ':', Array.from(macroSources));
+        }
+
         const prepared = originalPreparePrompt(prompt, original);
 
         // Debug: log all prompts passing through
@@ -336,17 +442,31 @@ function applyPromptManagerPatch() {
             contentLength: prepared?.content?.length || 0,
             marker: prepared?.marker,
             markersEnabled,
+            macroSources: Array.from(macroSources),
         });
 
-        if (markersEnabled && prepared?.content?.trim() && !prepared.marker) {
-            // Store mapping for this prompt (use identifier as fallback name)
-            if (prepared.identifier) {
-                const sanitizedId = sanitizeTag(prepared.identifier);
-                const displayName = prepared.name || DISPLAY_NAMES[sanitizedId] || prepared.identifier;
-                identifierToName.set(sanitizedId, displayName);
-                identifierToName.set(prepared.identifier, displayName);
-            }
+        // Always store metadata for categorization (even for marker prompts we don't wrap)
+        if (prepared?.identifier) {
+            const sanitizedId = sanitizeTag(prepared.identifier);
+            const displayName = prepared.name || DISPLAY_NAMES[sanitizedId] || prepared.identifier;
+            identifierToName.set(sanitizedId, displayName);
+            identifierToName.set(prepared.identifier, displayName);
 
+            // Store metadata about this prompt for categorization
+            // Include macro sources for smart categorization
+            promptMetadata.set(sanitizedId, {
+                isSystemPrompt: !!prepared.system_prompt,
+                isMarker: !!prepared.marker,
+                isUserPrompt: !prepared.system_prompt && !prepared.marker,
+                originalIdentifier: prepared.identifier,
+                name: displayName,
+                role: prepared.role,
+                macroSources: macroSources, // Set of source categories detected from macros
+            });
+        }
+
+        // Only wrap non-marker prompts that have content (skip during dry runs)
+        if (markersEnabled && !isDryRun && prepared?.content?.trim() && !prepared.marker) {
             // Wrap content with markers
             prepared.content = wrap(prepared.identifier, prepared.content);
             console.log('[Carrot Compass] WRAPPED prompt:', prepared.identifier, '→', identifierToName.get(prepared.identifier) || prepared.identifier);
@@ -387,6 +507,196 @@ export function removePromptManagerPatch() {
 // =============================================================================
 
 /**
+ * Strip WI content from chat messages to prevent double-counting
+ * ST depth-injects WI directly into chat message content, so we need to remove it
+ * @param {string} content - The content to strip WI from
+ * @returns {string} Content with WI removed
+ */
+function stripWIContentFromChat(content) {
+    if (!content) return content;
+
+    const entryList = uiState.currentEntryList || [];
+    if (entryList.length === 0) return content;
+
+    let result = content;
+
+    // Remove each WI entry's content from the text
+    for (const entry of entryList) {
+        if (!entry.content) continue;
+
+        // Only remove if content actually appears
+        const index = result.indexOf(entry.content);
+        if (index !== -1) {
+            // Remove the WI content
+            result = result.slice(0, index) + result.slice(index + entry.content.length);
+            console.debug('[Carrot Compass] Stripped WI entry from chat:', entry.comment || entry.key?.[0] || `#${entry.uid}`);
+        }
+    }
+
+    // Clean up any double newlines left behind
+    result = result.replace(/\n{3,}/g, '\n\n');
+
+    return result.trim();
+}
+
+/**
+ * Check if content contains World Info that was injected at depth
+ * Uses uiState.currentEntryList from the worldbook tracker
+ * Returns array of { wiEntry, startIndex, endIndex } for each match
+ * @param {string} content - Content to check
+ * @returns {Array<{wiEntry: Object, startIndex: number, endIndex: number}>}
+ */
+function findInjectedWIContent(content) {
+    const matches = [];
+    const entryList = uiState.currentEntryList || [];
+    if (!content || entryList.length === 0) return matches;
+
+    console.debug('[Carrot Compass] Checking content against', entryList.length, 'tracked WI entries');
+
+    for (const entry of entryList) {
+        // Check if this WI content appears in the message
+        const wiContent = entry.content;
+        if (!wiContent) continue;
+
+        const index = content.indexOf(wiContent);
+        if (index !== -1) {
+            matches.push({
+                wiEntry: {
+                    uid: entry.uid,
+                    world: entry.world,
+                    comment: entry.comment || entry.key?.join(', ') || 'World Info Entry',
+                    content: wiContent,
+                    position: entry.position,
+                    depth: entry.depth,
+                },
+                startIndex: index,
+                endIndex: index + wiContent.length,
+            });
+        }
+    }
+
+    // Sort by start index
+    matches.sort((a, b) => a.startIndex - b.startIndex);
+    return matches;
+}
+
+/**
+ * Extract nested markers and unmarked content from CHATHISTORY content
+ * This handles depth-injected preset prompts that appear inside chat messages
+ * @param {string} content - The CHATHISTORY content that may contain nested markers
+ * @param {string} parentTag - The parent CHATHISTORY tag
+ * @param {string} role - Message role
+ * @param {Function} countTokens - Token counting function
+ * @param {boolean} skipWI - If true, don't detect/split WI (we get it from tracker instead)
+ * @returns {Promise<Array<Object>>} Array of section objects
+ */
+async function extractNestedContent(content, parentTag, role, countTokens, skipWI = false) {
+    const sections = [];
+
+    // If skipWI is true, strip out any WI content that was injected into chat
+    // We get WI from the tracker, so we don't want to double-count it in CHATHISTORY
+    let processedContent = content;
+    if (skipWI) {
+        processedContent = stripWIContentFromChat(content);
+        if (processedContent !== content) {
+            console.debug('[Carrot Compass] Stripped WI content from CHATHISTORY, remaining length:', processedContent.length);
+        }
+    }
+
+    // If nothing left after stripping WI, skip this section
+    if (!processedContent.trim()) {
+        return sections;
+    }
+
+    // Find all nested markers within this content
+    const nestedMarkers = parseMarkers(processedContent);
+
+    if (nestedMarkers.length > 0) {
+        console.debug('[Carrot Compass] Found', nestedMarkers.length, 'nested markers inside', parentTag, ':', nestedMarkers.map(m => m.tag));
+    }
+
+    if (nestedMarkers.length === 0) {
+        // No nested markers - return as chat content (WI already stripped if skipWI)
+        const tokens = await countTokens(processedContent);
+        if (tokens > 0) {
+            sections.push({
+                tag: parentTag,
+                name: getDisplayName(parentTag),
+                content: processedContent,
+                tokens,
+                preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
+                role,
+            });
+        }
+        return sections;
+    }
+
+    // Has nested markers - extract them properly
+    // Build a map of marker positions in the processed content (WI already stripped if skipWI)
+    const markerPositions = [];
+    for (const marker of nestedMarkers) {
+        // Find the full marker string position (including tags)
+        const fullMarkerRegex = new RegExp(`<<${marker.tag}>>[\\s\\S]*?<<\\/${marker.tag}>>`, 'g');
+        let match;
+        while ((match = fullMarkerRegex.exec(processedContent)) !== null) {
+            // Verify this is the right match by checking content
+            if (match[0].includes(marker.content)) {
+                markerPositions.push({
+                    tag: marker.tag,
+                    content: marker.content,
+                    startIndex: match.index,
+                    endIndex: match.index + match[0].length,
+                    fullMatch: match[0],
+                });
+                break;
+            }
+        }
+    }
+
+    // Sort by position
+    markerPositions.sort((a, b) => a.startIndex - b.startIndex);
+
+    // Extract sections: unmarked content between markers + the markers themselves
+    let lastEnd = 0;
+    for (const pos of markerPositions) {
+        // Add any unmarked content before this marker as chat
+        if (pos.startIndex > lastEnd) {
+            const unmarkedContent = processedContent.substring(lastEnd, pos.startIndex).trim();
+            if (unmarkedContent) {
+                // Recursively process, passing skipWI through
+                const unmarkedSections = await extractNestedContent(unmarkedContent, parentTag, role, countTokens, skipWI);
+                sections.push(...unmarkedSections);
+            }
+        }
+
+        // Add the marker itself as its proper section
+        const tokens = await countTokens(pos.content);
+        sections.push({
+            tag: pos.tag,
+            name: getDisplayName(pos.tag),
+            content: pos.content,
+            tokens,
+            preview: pos.content.length > 100 ? pos.content.slice(0, 100) + '...' : pos.content,
+            role,
+            isDepthInjected: true, // Mark that this was found inside CHATHISTORY
+        });
+
+        lastEnd = pos.endIndex;
+    }
+
+    // Add any remaining unmarked content after the last marker
+    if (lastEnd < processedContent.length) {
+        const remainingContent = processedContent.substring(lastEnd).trim();
+        if (remainingContent) {
+            const remainingSections = await extractNestedContent(remainingContent, parentTag, role, countTokens, skipWI);
+            sections.push(...remainingSections);
+        }
+    }
+
+    return sections;
+}
+
+/**
  * Process chat completion prompt and extract itemization
  * @param {Object} eventData
  */
@@ -406,7 +716,36 @@ async function processChatCompletion(eventData) {
         rawMessages: chat.length,
     };
 
-    // Scan all messages for markers
+    // First, add World Info entries directly from uiState.currentEntryList
+    // This gives us individual entries instead of ST's combined blobs
+    const entryList = uiState.currentEntryList || [];
+    for (const entry of entryList) {
+        if (!entry.content) continue;
+
+        const tokens = await countTokens(entry.content);
+        const position = getWIPositionName(entry.position, entry.depth);
+
+        itemization.sections.push({
+            tag: `WI_${position}`,
+            name: entry.comment || entry.key?.[0] || `World Info #${entry.uid}`,
+            content: entry.content,
+            tokens,
+            preview: entry.content.length > 100 ? entry.content.slice(0, 100) + '...' : entry.content,
+            role: 'system',
+            isWorldInfo: true,
+            wiPosition: position,
+            wiUid: entry.uid,
+            wiWorld: entry.world,
+        });
+
+        itemization.totalMarkedTokens += tokens;
+    }
+
+    if (entryList.length > 0) {
+        console.debug('[Carrot Compass] Added', entryList.length, 'World Info entries from tracker');
+    }
+
+    // Scan all messages for markers, then strip them
     for (const message of chat) {
         if (!message.content) continue;
 
@@ -414,18 +753,40 @@ async function processChatCompletion(eventData) {
         const markers = parseMarkers(content);
 
         for (const { tag, content: markerContent } of markers) {
-            const tokens = await countTokens(markerContent);
+            // Skip WORLDINFOBEFORE/WORLDINFOAFTER - we get WI entries directly from tracker
+            if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag === 'WI_BEFORE' || tag === 'WI_AFTER') {
+                console.debug('[Carrot Compass] Skipping', tag, '- WI entries added from tracker');
+                continue;
+            }
 
-            itemization.sections.push({
-                tag,
-                name: getDisplayName(tag),
-                content: markerContent,
-                tokens,
-                preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
-                role: message.role,
-            });
+            // For CHATHISTORY markers, extract any nested markers (depth-injected prompts)
+            // But skip WI detection since we already have WI from tracker
+            if (tag.startsWith('CHATHISTORY')) {
+                const extractedSections = await extractNestedContent(markerContent, tag, message.role, countTokens, true);
+                for (const section of extractedSections) {
+                    itemization.sections.push(section);
+                    itemization.totalMarkedTokens += section.tokens;
+                }
+            } else {
+                const tokens = await countTokens(markerContent);
 
-            itemization.totalMarkedTokens += tokens;
+                itemization.sections.push({
+                    tag,
+                    name: getDisplayName(tag),
+                    content: markerContent,
+                    tokens,
+                    preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
+                    role: message.role,
+                });
+
+                itemization.totalMarkedTokens += tokens;
+            }
+        }
+
+        // Strip markers from the message content so they don't go to the API
+        // This is critical for prefill/bias which can break if markers are included
+        if (markersEnabled && markers.length > 0) {
+            message.content = stripMarkers(content);
         }
     }
 
@@ -471,6 +832,11 @@ async function processTextCompletion(eventData) {
         itemization.totalMarkedTokens += tokens;
     }
 
+    // Strip markers from prompt so they don't go to the API
+    if (markersEnabled && markers.length > 0) {
+        eventData.prompt = stripMarkers(prompt);
+    }
+
     lastItemization = itemization;
 
     console.debug('[Carrot Compass] Text itemization:', itemization.sections.length, 'sections');
@@ -481,7 +847,10 @@ async function processTextCompletion(eventData) {
  */
 function onGenerationEnded() {
     restoreExtensionPrompts();
+    isDryRun = false; // Reset dry run state
+    // Note: WI entries are managed by uiState.currentEntryList (worldbook tracker)
 }
+
 
 /**
  * Capture prompt manager data after CHAT_COMPLETION_PROMPT_READY
@@ -578,10 +947,22 @@ export function hasPromptManagerData() {
 // =============================================================================
 
 /**
+ * Ensure CarrotCompass settings object exists
+ */
+function ensureSettings() {
+    if (!extension_settings.CarrotCompass) {
+        extension_settings.CarrotCompass = {};
+    }
+}
+
+/**
  * Enable marker injection
  */
 export function enableMarkers() {
     markersEnabled = true;
+    ensureSettings();
+    extension_settings.CarrotCompass.markersEnabled = true;
+    saveSettingsDebounced();
     console.log('[Carrot Compass] Token markers enabled');
 }
 
@@ -591,6 +972,9 @@ export function enableMarkers() {
 export function disableMarkers() {
     markersEnabled = false;
     restoreExtensionPrompts();
+    ensureSettings();
+    extension_settings.CarrotCompass.markersEnabled = false;
+    saveSettingsDebounced();
     console.log('[Carrot Compass] Token markers disabled');
 }
 
@@ -616,27 +1000,41 @@ export function hasItemizationData() {
 }
 
 /**
- * Categorize a section based on its tag and name
+ * Categorize a section based on its tag, metadata, macro sources, and name
+ * Uses promptMetadata to distinguish between ST system prompts and user-defined presets
+ * Uses macro detection to categorize preset prompts by their content sources
  * @param {Object} section - Section with tag, name properties
  * @returns {string} Category name
  */
 function categorizeSection(section) {
     const tag = section.tag.toUpperCase();
     const name = (section.name || '').toLowerCase();
+    const metadata = promptMetadata.get(tag);
 
-    // Character Card - ST system identifiers
-    if (['CHARDESCRIPTION', 'CHARPERSONALITY', 'SCENARIO', 'PERSONADESCRIPTION'].includes(tag)) {
+    // Character Card - ST system marker prompts that pull from character data
+    // These have marker: true and system_prompt: true in ST's preset system
+    if (['CHARDESCRIPTION', 'CHAR', 'CHARPERSONALITY', 'PERSONALITY', 'SCENARIO', 'PERSONADESCRIPTION', 'PERSONA'].includes(tag)) {
         return 'Character Card';
     }
 
-    // World Info
+    // World Info - both marker prompts, our custom WI markers, and depth-injected WI
     if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag.startsWith('WI_')) {
         return 'World Info';
     }
 
-    // Chat History - messages from conversation
-    if (tag.startsWith('CHATHISTORY')) {
+    // Check if section is explicitly marked as World Info (from depth injection detection)
+    if (section.isWorldInfo) {
+        return 'World Info';
+    }
+
+    // Chat History - messages from conversation (marker prompt)
+    if (tag.startsWith('CHATHISTORY') || tag === 'CHATHISTORY') {
         return 'Chat History';
+    }
+
+    // Example Dialogue (marker prompt)
+    if (tag === 'EXAMPLES' || tag === 'DIALOGUEEXAMPLES' || tag === 'DIALOGUEEXAMPLES') {
+        return 'Example Dialogue';
     }
 
     // Extensions - ST built-in extension prompts
@@ -644,19 +1042,57 @@ function categorizeSection(section) {
         return 'Extensions';
     }
 
-    // System markers (main prompt, jailbreak)
+    // Extension prompt markers we inject
+    if (['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'ANCHOR_BEFORE', 'ANCHOR_AFTER'].includes(tag)) {
+        return 'Extensions';
+    }
+
+    // System markers - core system prompts (main prompt, jailbreak, NSFW toggle)
+    // These are system_prompt: true but NOT marker prompts
     if (['MAIN', 'JAILBREAK', 'ENHANCEDEFINITIONS', 'NSFW'].includes(tag)) {
         return 'System Prompts';
     }
 
-    // Extension prompt markers we inject
-    if (['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG'].includes(tag)) {
-        return 'Extensions';
-    }
+    // Use metadata to categorize if available
+    if (metadata) {
+        // If it's a system_prompt but not a marker, it's a system config prompt
+        if (metadata.isSystemPrompt && !metadata.isMarker) {
+            return 'System Prompts';
+        }
 
-    // Example dialogues
-    if (tag === 'EXAMPLES' || tag === 'DIALOGUEEXAMPLES') {
-        return 'Example Dialogue';
+        // SMART CATEGORIZATION: Use macro sources to determine what this prompt contains
+        // This allows us to categorize UUID preset prompts based on WHAT they inject
+        if (metadata.macroSources && metadata.macroSources.size > 0) {
+            const sources = metadata.macroSources;
+
+            // Persona takes priority - {{persona}} macro injects user persona
+            if (sources.has('persona')) {
+                return 'Persona';
+            }
+
+            // Character card content - description, personality, scenario
+            if (sources.has('character')) {
+                return 'Character Card';
+            }
+
+            // World info macros
+            if (sources.has('worldinfo')) {
+                return 'World Info';
+            }
+
+            // Example dialogue
+            if (sources.has('examples')) {
+                return 'Example Dialogue';
+            }
+
+            // System instructions from character
+            if (sources.has('system')) {
+                return 'System Prompts';
+            }
+
+            // Just character/user name substitution - likely a prompt template
+            // Don't categorize based on just name macros since they're used everywhere
+        }
     }
 
     // Check if it looks like a UUID (user-defined preset prompt)
@@ -683,9 +1119,16 @@ export function getItemizationSummary() {
         categories: {},
     };
 
+    // Debug: Log available metadata
+    console.debug('[Carrot Compass] Categorizing with metadata:', Object.fromEntries(promptMetadata));
+
     // Group sections by category
     for (const section of lastItemization.sections) {
         const category = categorizeSection(section);
+
+        // Debug: Log categorization decision
+        const metadata = promptMetadata.get(section.tag.toUpperCase());
+        console.debug(`[Carrot Compass] Categorized "${section.tag}" → "${category}"`, metadata ? `(system_prompt: ${metadata.isSystemPrompt}, marker: ${metadata.isMarker})` : '(no metadata)');
 
         if (!summary.categories[category]) {
             summary.categories[category] = {
@@ -721,6 +1164,13 @@ function retryApplyPatch(attempts = 5, delay = 500) {
  * Initialize the token itemizer
  */
 export function initTokenItemizer() {
+    // Load saved marker state from settings
+    ensureSettings();
+    if (extension_settings.CarrotCompass.markersEnabled) {
+        markersEnabled = true;
+        console.log('[Carrot Compass] Restored markers enabled state from settings');
+    }
+
     // Try to apply monkeypatch immediately (may fail if promptManager not ready)
     applyPromptManagerPatch();
 
@@ -731,7 +1181,15 @@ export function initTokenItemizer() {
 
     // Retry patch on generation start if not already applied
     // This ensures we catch promptManager after it's been initialized
-    eventSource.on(event_types.GENERATION_STARTED, () => {
+    // Also track dry run state to avoid polluting dry run prompts with markers
+    eventSource.on(event_types.GENERATION_STARTED, (args) => {
+        // Track dry run state - args can be various formats depending on ST version
+        isDryRun = args?.dryRun || args?.dry_run || false;
+        if (isDryRun) {
+            console.debug('[Carrot Compass] Dry run detected, skipping marker injection');
+            return;
+        }
+
         if (!monkeypatchApplied) {
             console.log('[Carrot Compass] Attempting monkeypatch on GENERATION_STARTED...');
             applyPromptManagerPatch();
@@ -749,6 +1207,9 @@ export function initTokenItemizer() {
 
     // Inject markers into story string params before combine
     eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, injectStoryStringMarkers);
+
+    // Note: WI entries are tracked by uiState.currentEntryList (worldbook tracker in index.js)
+    // We use that shared state in findInjectedWIContent() to identify depth-injected WI
 
     // Capture itemization from final prompts
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, processChatCompletion);
@@ -772,6 +1233,7 @@ export function initTokenItemizer() {
  */
 const CATEGORY_COLORS = {
     'Character Card': { bg: '#f59e0b', icon: '🎭' },
+    'Persona': { bg: '#d946ef', icon: '👤' },  // User persona - distinct magenta color
     'World Info': { bg: '#f97316', icon: '📚' },
     'System Prompts': { bg: '#6366f1', icon: '⚙️' },
     'Extensions': { bg: '#8b5cf6', icon: '🔌' },
@@ -1105,7 +1567,7 @@ export function showTokenItemizer() {
                 transition: all 0.2s;
             `;
 
-            // Section header
+            // Section header - name prominent, UUID as subtle subtext
             const sectionHeader = document.createElement('div');
             sectionHeader.style.cssText = `
                 display: flex;
@@ -1115,19 +1577,41 @@ export function showTokenItemizer() {
                 cursor: pointer;
                 user-select: none;
             `;
+
+            // Check if tag looks like a UUID (show it small) vs a readable tag (show it as badge)
+            const isUUID = /^[A-F0-9]{8}_[A-F0-9]{4}_[A-F0-9]{4}_[A-F0-9]{4}_[A-F0-9]{12}$/.test(section.tag);
+
+            // Check if this is a WI entry - use wiPosition from section data if available
+            const isWI = section.isWorldInfo || section.tag.startsWith('WI_');
+            const wiPositionBadge = section.wiPosition || (isWI ? section.tag.substring(3).replace(/_/g, ' ') : null);
+
             sectionHeader.innerHTML = `
-                <span style="
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--SmartThemeBodyColor);">${section.name}</span>
+                    ${isUUID ? `<span style="font-size: 9px; opacity: 0.4; font-family: monospace; letter-spacing: -0.5px;">${section.tag.toLowerCase().replace(/_/g, '-')}</span>` : ''}
+                </div>
+                ${wiPositionBadge ? `<span style="
+                    background: ${tagColor}40;
+                    color: ${tagColor};
+                    padding: 3px 8px;
+                    border-radius: 4px;
+                    font-size: 9px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.3px;
+                    border: 1px solid ${tagColor}60;
+                ">${wiPositionBadge}</span>` : ''}
+                ${!isUUID && !isWI ? `<span style="
                     background: ${tagColor};
                     color: white;
-                    padding: 4px 8px;
+                    padding: 3px 6px;
                     border-radius: 4px;
-                    font-size: 10px;
-                    font-weight: 700;
+                    font-size: 9px;
+                    font-weight: 600;
                     text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                ">${section.tag}</span>
-                <span style="flex: 1; font-size: 13px; font-weight: 500; color: var(--SmartThemeBodyColor);">${section.name}</span>
-                ${section.role ? `<span style="font-size: 11px; opacity: 0.5; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${section.role}</span>` : ''}
+                    letter-spacing: 0.3px;
+                ">${section.tag}</span>` : ''}
+                ${section.role ? `<span style="font-size: 10px; opacity: 0.5; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${section.role}</span>` : ''}
                 <span style="font-size: 12px; font-weight: 600; color: ${tagColor};">${section.tokens.toLocaleString()} tk</span>
                 <span class="expand-icon" style="opacity: 0.4; transition: transform 0.2s; font-size: 10px;">▼</span>
             `;
