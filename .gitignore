@@ -1,0 +1,4 @@
+# Documentation and planning files
+*.md
+docs/
+planning/
