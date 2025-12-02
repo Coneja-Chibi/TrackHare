@@ -356,6 +356,8 @@ function renderEntryRow(entry) {
     let detailsHtml = '';
 
     if (isExpandable) {
+        // Show trigger section - either found triggers or "unknown" for L1+ entries
+        const isRecursive = entry.level > 0;
         const triggerSection = hasDetails ? `
             <div class="ck-rv-row__section">
                 <div class="ck-rv-row__section-title">Triggered by:</div>
@@ -370,7 +372,14 @@ function renderEntryRow(entry) {
                     </div>
                 `).join('')}
             </div>
-        ` : '';
+        ` : (isRecursive && entry.keys.length > 0 ? `
+            <div class="ck-rv-row__section">
+                <div class="ck-rv-row__section-title">Triggered by:</div>
+                <div class="ck-rv-trigger-unknown">
+                    Could not determine trigger source. Keys may have matched in chat context rather than entry content.
+                </div>
+            </div>
+        ` : '');
 
         const keysSection = entry.keys.length > 0 ? `
             <div class="ck-rv-row__section">
