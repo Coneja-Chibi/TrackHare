@@ -222,6 +222,7 @@ function buildRecursionTree() {
                 name: src.entry.comment || src.entry.key?.[0] || `Entry #${src.entry.uid}`,
                 matchedKey: src.matchedKey,
                 uid: src.entry.uid,
+                world: src.entry.world, // Store world directly from the source entry
             }));
         }
     }
@@ -394,13 +395,10 @@ function renderEntryNode(node, nodesByUid) {
     let triggeredByHtml = '';
     if (node.triggeredBy && node.triggeredBy.length > 0) {
         const sources = node.triggeredBy.map(src => {
-            // Get the world name from the source node
-            const sourceNode = nodesByUid?.get(src.uid);
-            const worldName = sourceNode?.world || '';
             return `<span class="ck-recursion-source ck-recursion-source--clickable"
-                          data-world="${escapeHtml(worldName)}"
+                          data-world="${escapeHtml(src.world)}"
                           data-entry="${escapeHtml(src.name)}"
-                          title="Click to open in lorebook">← <strong>${escapeHtml(src.name)}</strong> (key: "${escapeHtml(src.matchedKey)}")</span>`;
+                          title="Click to open ${escapeHtml(src.name)} in ${escapeHtml(src.world)}">← <strong>${escapeHtml(src.name)}</strong> (key: "${escapeHtml(src.matchedKey)}")</span>`;
         }).join('');
         triggeredByHtml = `<div class="ck-recursion-node__sources">${sources}</div>`;
     }
@@ -410,7 +408,7 @@ function renderEntryNode(node, nodesByUid) {
         <div class="ck-recursion-node ck-recursion-node--flat ck-recursion-node--clickable"
              data-world="${escapeHtml(node.world)}"
              data-entry="${escapeHtml(node.name)}"
-             title="Click to open in lorebook">
+             title="Click to open ${escapeHtml(node.name)} in ${escapeHtml(node.world)}">
             <div class="ck-recursion-node__indicator" style="background: ${levelColor};"></div>
             <div class="ck-recursion-node__content">
                 <div class="ck-recursion-node__name">${escapeHtml(node.name)}</div>
