@@ -2353,21 +2353,55 @@ export function showTokenItemizer() {
 
         // Budget stats
         const budgetStats = document.createElement('div');
-        budgetStats.style.cssText = 'display: flex; flex-direction: column; gap: 8px; font-size: 12px;';
-        budgetStats.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="opacity: 0.7;">Used</span>
-                <span style="font-weight: 600; color: ${usageColor};">${effectiveTokens.toLocaleString()} tk (${usedPercent.toFixed(1)}%)</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="opacity: 0.7;">Available</span>
-                <span style="font-weight: 600; color: #10b981;">${availableTokens.toLocaleString()} tk</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <span style="opacity: 0.7;">Max Context</span>
-                <span style="font-weight: 500;">${maxContext.toLocaleString()} tk</span>
-            </div>
-        `;
+        budgetStats.style.cssText = 'display: flex; flex-direction: column; gap: 6px; font-size: 12px;';
+
+        if (showBudgetBreakdown) {
+            // Show individual category breakdown with percentages of max context
+            let breakdownHTML = '';
+            categories.forEach(([catName, catData]) => {
+                const catColor = CATEGORY_COLORS[catName]?.bg || '#64748b';
+                const catPercent = ((catData.tokens / maxContext) * 100).toFixed(2);
+                const isExcluded = excludedCategories.has(catName);
+                if (!isExcluded && catData.tokens > 0) {
+                    breakdownHTML += `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="display: flex; align-items: center; gap: 6px;">
+                                <span style="width: 8px; height: 8px; background: ${catColor}; border-radius: 2px;"></span>
+                                <span style="opacity: 0.8;">${catName}</span>
+                            </span>
+                            <span style="font-weight: 500; color: ${catColor};">${catPercent}%</span>
+                        </div>
+                    `;
+                }
+            });
+            breakdownHTML += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 6px; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <span style="opacity: 0.7;">Total Used</span>
+                    <span style="font-weight: 600; color: ${usageColor};">${usedPercent.toFixed(2)}%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="opacity: 0.7;">Available</span>
+                    <span style="font-weight: 600; color: #10b981;">${(100 - usedPercent).toFixed(2)}%</span>
+                </div>
+            `;
+            budgetStats.innerHTML = breakdownHTML;
+        } else {
+            // Simple used/available/max view
+            budgetStats.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="opacity: 0.7;">Used</span>
+                    <span style="font-weight: 600; color: ${usageColor};">${effectiveTokens.toLocaleString()} tk (${usedPercent.toFixed(1)}%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="opacity: 0.7;">Available</span>
+                    <span style="font-weight: 600; color: #10b981;">${availableTokens.toLocaleString()} tk</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <span style="opacity: 0.7;">Max Context</span>
+                    <span style="font-weight: 500;">${maxContext.toLocaleString()} tk</span>
+                </div>
+            `;
+        }
         budgetSection.appendChild(budgetStats);
 
         sidebar.appendChild(budgetSection);
