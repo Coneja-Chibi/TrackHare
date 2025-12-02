@@ -238,18 +238,22 @@ function buildEntryList() {
         levelMap.get(node.level).push(node);
     }
 
-    // Do key matching to find trigger sources - look at ALL previous levels, not just immediate previous
+    // Do key matching to find trigger sources
+    // Check ALL entries at same level or previous levels (excluding self)
     const sortedLevels = [...levelMap.keys()].sort((a, b) => a - b);
 
-    for (let i = 1; i < sortedLevels.length; i++) {
+    for (let i = 0; i < sortedLevels.length; i++) {
         const currentLevel = sortedLevels[i];
         const currentNodes = levelMap.get(currentLevel);
 
-        // Collect all entries from all previous levels as potential triggers
-        const allPrevEntries = [];
-        for (let j = 0; j < i; j++) {
-            const prevEntries = levelMap.get(sortedLevels[j]).map(n => n.originalEntry);
-            allPrevEntries.push(...prevEntries);
+        // For L0, no triggers to find (they triggered from chat/character context)
+        if (currentLevel === 0) continue;
+
+        // Collect all entries from previous levels AND same level as potential triggers
+        const allPotentialTriggers = [];
+        for (let j = 0; j <= i; j++) {
+            const entries = levelMap.get(sortedLevels[j]).map(n => n.originalEntry);
+            allPotentialTriggers.push(...entries);
         }
 
         for (const node of currentNodes) {
@@ -258,7 +262,10 @@ function buildEntryList() {
                 continue;
             }
 
-            const sources = findTriggeringSources(allPrevEntries, node.originalEntry);
+            // Filter out self from potential triggers
+            const triggersExcludingSelf = allPotentialTriggers.filter(e => e.uid !== node.uid);
+
+            const sources = findTriggeringSources(triggersExcludingSelf, node.originalEntry);
             node.triggeredBy = sources.map(src => ({
                 name: src.entry.comment || src.entry.key?.[0] || `Entry #${src.entry.uid}`,
                 matchedKey: src.matchedKey,
