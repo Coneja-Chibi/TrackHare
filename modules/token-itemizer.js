@@ -1377,6 +1377,7 @@ async function processChatCompletion(eventData) {
 
         // Check if this is the prefill (last assistant message matching our captured prefill)
         const isLastMessage = i === chat.length - 1;
+        let isPrefillMessage = false;
         if (isLastMessage && message.role === 'assistant' && knownDepthPrompts.prefill) {
             const trimmedContent = content.trim();
             const prefillMatch = trimmedContent === knownDepthPrompts.prefill ||
@@ -1395,46 +1396,49 @@ async function processChatCompletion(eventData) {
                 });
                 itemization.totalMarkedTokens += tokens;
                 console.debug('[Carrot Compass] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
-                continue; // Don't process markers for prefill
+                isPrefillMessage = true;
             }
         }
 
-        const markers = parseMarkers(content);
+        // Parse markers (skip for prefill messages)
+        if (!isPrefillMessage) {
+            const markers = parseMarkers(content);
 
-        for (const { tag, content: markerContent } of markers) {
-            // Skip WORLDINFOBEFORE/WORLDINFOAFTER - we get WI entries directly from tracker
-            if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag === 'WI_BEFORE' || tag === 'WI_AFTER') {
-                console.debug('[Carrot Compass] Skipping', tag, '- WI entries added from tracker');
-                continue;
-            }
-
-            // For CHATHISTORY markers, extract any nested markers (depth-injected prompts)
-            // But skip WI detection since we already have WI from tracker
-            if (tag.startsWith('CHATHISTORY')) {
-                const extractedSections = await extractNestedContent(markerContent, tag, message.role, countTokens, true);
-                for (const section of extractedSections) {
-                    itemization.sections.push(section);
-                    itemization.totalMarkedTokens += section.tokens;
+            for (const { tag, content: markerContent } of markers) {
+                // Skip WORLDINFOBEFORE/WORLDINFOAFTER - we get WI entries directly from tracker
+                if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag === 'WI_BEFORE' || tag === 'WI_AFTER') {
+                    console.debug('[Carrot Compass] Skipping', tag, '- WI entries added from tracker');
+                    continue;
                 }
-            } else {
-                const tokens = await countTokens(markerContent);
 
-                itemization.sections.push({
-                    tag,
-                    name: getDisplayName(tag),
-                    content: markerContent,
-                    tokens,
-                    preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
-                    role: message.role,
-                });
+                // For CHATHISTORY markers, extract any nested markers (depth-injected prompts)
+                // But skip WI detection since we already have WI from tracker
+                if (tag.startsWith('CHATHISTORY')) {
+                    const extractedSections = await extractNestedContent(markerContent, tag, message.role, countTokens, true);
+                    for (const section of extractedSections) {
+                        itemization.sections.push(section);
+                        itemization.totalMarkedTokens += section.tokens;
+                    }
+                } else {
+                    const tokens = await countTokens(markerContent);
 
-                itemization.totalMarkedTokens += tokens;
+                    itemization.sections.push({
+                        tag,
+                        name: getDisplayName(tag),
+                        content: markerContent,
+                        tokens,
+                        preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
+                        role: message.role,
+                    });
+
+                    itemization.totalMarkedTokens += tokens;
+                }
             }
         }
 
-        // Strip markers from the message content so they don't go to the API
-        // This is critical for prefill/bias which can break if markers are included
-        if (markersEnabled && markers.length > 0) {
+        // ALWAYS strip markers from ALL message content when markers are enabled
+        // This ensures no <<TAG>> markers ever reach the API
+        if (markersEnabled) {
             message.content = stripMarkers(content);
         }
     }
@@ -1482,8 +1486,9 @@ async function processTextCompletion(eventData) {
         itemization.totalMarkedTokens += tokens;
     }
 
-    // Strip markers from prompt so they don't go to the API
-    if (markersEnabled && markers.length > 0) {
+    // ALWAYS strip markers from prompt when markers are enabled
+    // This ensures no <<TAG>> markers ever reach the API
+    if (markersEnabled) {
         eventData.prompt = stripMarkers(prompt);
     }
 
