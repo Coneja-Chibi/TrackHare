@@ -1283,7 +1283,7 @@
 }
 
 /* =============================================================================
-   RECURSION VISUALIZER
+   TRIGGER CHAIN VISUALIZER (Call Stack Style)
    ============================================================================= */
 
 /* Modal */
@@ -1300,14 +1300,14 @@
 .ck-recursion-modal__backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.7);
     backdrop-filter: var(--ck-blur-light);
 }
 
 .ck-recursion-modal__content {
     position: relative;
     width: 90%;
-    max-width: 700px;
+    max-width: 600px;
     max-height: 80vh;
     background: var(--SmartThemeChatTintColor);
     border: 1px solid var(--SmartThemeBorderColor);
@@ -1323,7 +1323,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--ck-spacing-lg) var(--ck-spacing-xl);
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%);
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(99, 102, 241, 0.15) 100%);
     border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
@@ -1337,17 +1337,17 @@
 }
 
 .ck-recursion-modal__icon {
-    font-size: 24px;
+    font-size: 20px;
 }
 
 .ck-recursion-modal__close {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border: none;
     background: rgba(255, 255, 255, 0.1);
     border-radius: var(--ck-radius-sm);
     color: var(--SmartThemeBodyColor);
-    font-size: 16px;
+    font-size: 14px;
     cursor: pointer;
     transition: var(--ck-transition-fast);
 }
@@ -1359,330 +1359,202 @@
 
 .ck-recursion-modal__body {
     flex: 1;
-    padding: var(--ck-spacing-xl);
+    padding: var(--ck-spacing-lg);
     overflow-y: auto;
-}
-
-.ck-recursion-modal__footer {
-    padding: var(--ck-spacing-md) var(--ck-spacing-xl);
-    background: rgba(0, 0, 0, 0.2);
-    border-top: 1px solid var(--SmartThemeBorderColor);
-}
-
-.ck-recursion-modal__legend {
     display: flex;
+    flex-direction: column;
     gap: var(--ck-spacing-lg);
-    font-size: var(--ck-text-sm);
+}
+
+/* Empty State */
+.ck-chain-empty {
+    text-align: center;
+    padding: var(--ck-spacing-2xl);
     opacity: 0.7;
 }
 
-.ck-legend-item {
-    display: flex;
-    align-items: center;
-    gap: var(--ck-spacing-xs);
-}
-
-.ck-legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-}
-
-/* Empty & Info States */
-.ck-recursion-empty,
-.ck-recursion-info {
-    text-align: center;
-    padding: var(--ck-spacing-2xl);
-}
-
-.ck-recursion-empty__icon,
-.ck-recursion-info__icon {
-    font-size: 48px;
+.ck-chain-empty__icon {
+    font-size: 40px;
     margin-bottom: var(--ck-spacing-md);
-    opacity: 0.5;
 }
 
-.ck-recursion-empty__title {
+.ck-chain-empty__title {
     font-size: var(--ck-text-lg);
     font-weight: 600;
     color: var(--SmartThemeBodyColor);
     margin-bottom: var(--ck-spacing-xs);
 }
 
-.ck-recursion-empty__desc {
+.ck-chain-empty__desc {
     font-size: var(--ck-text-sm);
     opacity: 0.6;
 }
 
-.ck-recursion-info {
-    display: flex;
-    align-items: center;
-    gap: var(--ck-spacing-md);
-    text-align: left;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: var(--ck-radius-md);
-    padding: var(--ck-spacing-lg);
-    margin-bottom: var(--ck-spacing-lg);
-}
-
-.ck-recursion-info__icon {
-    font-size: 32px;
-    margin: 0;
-}
-
-.ck-recursion-info__text {
-    font-size: var(--ck-text-sm);
-    line-height: 1.5;
-}
-
-/* Tree Structure */
-.ck-recursion-tree {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ck-spacing-xs);
-}
-
-.ck-recursion-node {
-    display: flex;
-    flex-direction: column;
-}
-
-.ck-recursion-node__row {
-    display: flex;
-    align-items: center;
-    gap: var(--ck-spacing-sm);
-    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
+/* Chain Section */
+.ck-chain-section {
     background: rgba(255, 255, 255, 0.03);
-    border-radius: var(--ck-radius-sm);
-    transition: var(--ck-transition-fast);
-    cursor: default;
-}
-
-.ck-recursion-node__row:hover {
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.ck-recursion-node--flat {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--ck-spacing-sm);
-    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: var(--ck-radius-sm);
-}
-
-.ck-recursion-node__toggle {
-    width: 16px;
-    font-size: 10px;
-    opacity: 0.5;
-    cursor: pointer;
-    transition: var(--ck-transition-fast);
-    text-align: center;
-}
-
-.ck-recursion-node--collapsed .ck-recursion-node__toggle {
-    transform: rotate(-90deg);
-}
-
-.ck-recursion-node__spacer {
-    width: 16px;
-}
-
-.ck-recursion-node__indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.ck-recursion-node__content {
-    flex: 1;
-    min-width: 0;
-}
-
-.ck-recursion-node__name {
-    font-size: var(--ck-text-md);
-    font-weight: 500;
-    color: var(--SmartThemeBodyColor);
-    display: flex;
-    align-items: center;
-    gap: var(--ck-spacing-sm);
-}
-
-.ck-recursion-node__level {
-    font-size: var(--ck-text-xs);
-    font-weight: 600;
-    padding: 2px 6px;
-    background: rgba(139, 92, 246, 0.2);
-    color: #a78bfa;
-    border-radius: var(--ck-radius-xs);
-}
-
-.ck-recursion-node[data-level="2"] .ck-recursion-node__level,
-.ck-recursion-node[data-level="3"] .ck-recursion-node__level {
-    background: rgba(6, 182, 212, 0.2);
-    color: #22d3ee;
-}
-
-.ck-recursion-node__meta {
-    display: flex;
-    align-items: center;
-    gap: var(--ck-spacing-sm);
-    font-size: var(--ck-text-xs);
-    opacity: 0.6;
-    margin-top: 2px;
-}
-
-.ck-recursion-node__world {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 1px 6px;
-    border-radius: var(--ck-radius-xs);
-}
-
-.ck-recursion-node__keyword {
-    color: #10b981;
-}
-
-.ck-recursion-node__children-count {
-    color: #8b5cf6;
-    font-weight: 500;
-}
-
-/* Children container with tree lines */
-.ck-recursion-children {
-    margin-left: 28px;
-    padding-left: var(--ck-spacing-md);
-    border-left: 2px solid rgba(139, 92, 246, 0.3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--ck-spacing-xs);
-    margin-top: var(--ck-spacing-xs);
-}
-
-.ck-recursion-node--collapsed .ck-recursion-children {
-    display: none;
-}
-
-/* Level-based flow layout */
-.ck-recursion-flow {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ck-spacing-sm);
-}
-
-.ck-recursion-level {
-    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--ck-radius-md);
     overflow: hidden;
 }
 
-.ck-recursion-level__header {
+.ck-chain-section--no-chain {
+    opacity: 0.7;
+}
+
+.ck-chain-section__header {
     display: flex;
     align-items: center;
-    gap: var(--ck-spacing-sm);
+    justify-content: space-between;
     padding: var(--ck-spacing-sm) var(--ck-spacing-md);
-    background: rgba(255, 255, 255, 0.05);
-    border-left: 3px solid;
+    background: rgba(139, 92, 246, 0.15);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
 }
 
-.ck-recursion-level__badge {
-    padding: 2px 8px;
-    border-radius: var(--ck-radius-xs);
-    font-size: var(--ck-text-xs);
-    font-weight: 700;
-    color: white;
+.ck-chain-section--no-chain .ck-chain-section__header {
+    background: rgba(100, 116, 139, 0.15);
+    border-bottom-color: rgba(100, 116, 139, 0.2);
 }
 
-.ck-recursion-level__name {
+.ck-chain-section__title {
     font-size: var(--ck-text-sm);
     font-weight: 600;
     color: var(--SmartThemeBodyColor);
 }
 
-.ck-recursion-level__count {
-    margin-left: auto;
+.ck-chain-section__count {
     font-size: var(--ck-text-xs);
     opacity: 0.6;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px 8px;
+    border-radius: 10px;
 }
 
-.ck-recursion-level__entries {
+.ck-chain-section__content {
+    padding: var(--ck-spacing-md);
+}
+
+.ck-chain-section__content--compact {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--ck-spacing-xs);
+    flex-wrap: wrap;
+    gap: var(--ck-spacing-xs);
+    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
 }
 
-.ck-recursion-arrow {
+/* Chain Step */
+.ck-chain-step {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: var(--ck-spacing-xs) 0;
-    opacity: 0.5;
-}
-
-.ck-recursion-arrow span:first-child {
-    font-size: 16px;
-    color: #8b5cf6;
-}
-
-.ck-recursion-arrow__label {
-    font-size: var(--ck-text-xs);
-    color: #8b5cf6;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* Triggered-by sources */
-.ck-recursion-node__sources {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 4px;
-    padding-top: 4px;
-    border-top: 1px dashed rgba(139, 92, 246, 0.3);
-}
-
-.ck-recursion-source {
-    font-size: var(--ck-text-xs);
-    color: #a78bfa;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.ck-recursion-source strong {
-    color: var(--SmartThemeBodyColor);
-}
-
-/* Clickable entries and sources */
-.ck-recursion-node--clickable {
+    align-items: flex-start;
+    gap: var(--ck-spacing-sm);
+    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
+    margin-left: var(--ck-spacing-md);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--ck-radius-sm);
+    border-left: 3px solid #8b5cf6;
     cursor: pointer;
     transition: var(--ck-transition-fast);
 }
 
-.ck-recursion-node--clickable:hover {
-    background: rgba(255, 255, 255, 0.1);
+.ck-chain-step:hover {
+    background: rgba(139, 92, 246, 0.15);
     transform: translateX(4px);
 }
 
-.ck-recursion-node--clickable:hover .ck-recursion-node__name {
+.ck-chain-step--root {
+    border-left-color: var(--ck-primary);
+    margin-left: 0;
+}
+
+.ck-chain-step--leaf {
+    border-left-color: #10b981;
+}
+
+.ck-chain-step__marker {
+    font-size: 12px;
+    color: #8b5cf6;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+
+.ck-chain-step--root .ck-chain-step__marker {
     color: var(--ck-primary);
 }
 
-.ck-recursion-source--clickable {
+.ck-chain-step--leaf .ck-chain-step__marker {
+    color: #10b981;
+}
+
+.ck-chain-step__content {
+    flex: 1;
+    min-width: 0;
+}
+
+.ck-chain-step__name {
+    font-size: var(--ck-text-md);
+    font-weight: 500;
+    color: var(--SmartThemeBodyColor);
+    margin-bottom: 2px;
+}
+
+.ck-chain-step:hover .ck-chain-step__name {
+    color: var(--ck-primary);
+}
+
+.ck-chain-step__world {
+    font-size: var(--ck-text-xs);
+    opacity: 0.5;
+}
+
+/* Chain Connector */
+.ck-chain-connector {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    margin-left: calc(var(--ck-spacing-md) + 10px);
+    padding: var(--ck-spacing-xs) 0;
+}
+
+.ck-chain-connector__line {
+    width: 2px;
+    height: 20px;
+    background: linear-gradient(to bottom, #8b5cf6, #8b5cf680);
+    border-radius: 1px;
+}
+
+.ck-chain-connector__label {
+    font-size: var(--ck-text-xs);
+    color: #a78bfa;
+    font-style: italic;
+}
+
+/* Standalone Entry (no chain) */
+.ck-chain-standalone {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ck-spacing-xs);
+    padding: var(--ck-spacing-xs) var(--ck-spacing-sm);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--ck-radius-xs);
     cursor: pointer;
     transition: var(--ck-transition-fast);
-    padding: 2px 6px;
-    margin: -2px -6px;
-    border-radius: var(--ck-radius-xs);
 }
 
-.ck-recursion-source--clickable:hover {
-    background: rgba(139, 92, 246, 0.2);
+.ck-chain-standalone:hover {
+    background: rgba(255, 255, 255, 0.1);
 }
 
-.ck-recursion-source--clickable:hover strong {
+.ck-chain-standalone__name {
+    font-size: var(--ck-text-sm);
+    color: var(--SmartThemeBodyColor);
+}
+
+.ck-chain-standalone:hover .ck-chain-standalone__name {
     color: var(--ck-primary);
-    text-decoration: underline;
+}
+
+.ck-chain-standalone__world {
+    font-size: var(--ck-text-xs);
+    opacity: 0.4;
 }
