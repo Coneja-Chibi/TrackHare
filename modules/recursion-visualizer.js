@@ -114,11 +114,15 @@ function buildEntryList() {
         const deepInfo = getDeepTriggerInfo(entry.uid);
         const chainInfo = recursionChain.get(entry.uid);
 
+        // Prefer deepInfo.recursionLevel as it's set directly from WORLDINFO_SCAN_DONE
+        // Fall back to chainInfo.level, then 0
+        const level = deepInfo?.recursionLevel ?? chainInfo?.level ?? 0;
+
         const node = {
             uid: entry.uid,
             name: entry.comment || entry.key?.[0] || `Entry #${entry.uid}`,
             world: entry.world,
-            level: chainInfo?.level || deepInfo?.recursionLevel || 0,
+            level: level,
             keys: entry.key || [],
             originalEntry: entry,
             triggeredBy: [],

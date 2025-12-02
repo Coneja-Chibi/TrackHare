@@ -204,12 +204,17 @@ export function determineTriggerReason(entry, timedEffects = null) {
 
 /**
  * Setup WORLDINFO_SCAN_DONE listener - THE source of truth
+ * This fires after EACH scan loop, so we track which entries activated at which level
  */
 function setupScanDoneTracking() {
     eventSource.on(event_types.WORLDINFO_SCAN_DONE, (args) => {
         const { state, new: newEntries, timedEffects } = args;
 
+        // loopCount starts at 1 for first loop (L0), 2 for second loop (L1), etc.
+        // scan_state.INITIAL = 1 (first scan), scan_state.RECURSION = 2 (recursive scans)
         const recursionLevel = Math.max(0, state.loopCount - 1);
+
+        console.debug(`[Carrot Compass] WORLDINFO_SCAN_DONE - loop ${state.loopCount}, state ${state.current}, level L${recursionLevel}, ${newEntries.successful?.length || 0} new entries`);
 
         if (newEntries.successful && newEntries.successful.length > 0) {
             const activatedUids = new Set(newEntries.successful.map(e => e.uid));
@@ -227,7 +232,7 @@ function setupScanDoneTracking() {
                     confident = fallback.confident;
                 }
 
-                deepTriggerData.set(entry.uid, {
+                const trackingData = {
                     uid: entry.uid,
                     timestamp: Date.now(),
                     recursionLevel: recursionLevel,
@@ -244,17 +249,19 @@ function setupScanDoneTracking() {
                     selectiveLogic: entry.selectiveLogic,
                     stickyDuration: entry.sticky || 0,
                     cooldown: entry.cooldown || 0,
-                });
+                };
 
-                if (state.loopCount > 1) {
-                    const previousLoopEntries = currentScanState.entriesThisLoop || [];
-                    recursionChain.set(entry.uid, {
-                        triggeredBy: previousLoopEntries.map(e => e.uid),
-                        level: recursionLevel,
-                    });
-                }
+                deepTriggerData.set(entry.uid, trackingData);
+                console.debug(`[Carrot Compass] Tracked entry ${entry.uid} (${entry.comment || 'unnamed'}) at L${recursionLevel}`);
+
+                // Also store in recursionChain for all entries (not just loopCount > 1)
+                recursionChain.set(entry.uid, {
+                    triggeredBy: state.loopCount > 1 ? (currentScanState.entriesThisLoop || []).map(e => e.uid) : [],
+                    level: recursionLevel,
+                });
             }
 
+            // Store this loop's entries for next iteration's "triggeredBy"
             currentScanState.entriesThisLoop = [...newEntries.successful];
             logBuffer = [];
         }
@@ -264,6 +271,7 @@ function setupScanDoneTracking() {
         if (state.next === 0) {
             stopLogCapture();
             currentScanState.active = false;
+            console.debug(`[Carrot Compass] Scan complete. Total tracked: ${deepTriggerData.size} entries`);
         }
     });
 }
