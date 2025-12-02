@@ -1,0 +1,11 @@
+{
+    "display_name": "Carrot Compass",
+    "loading_order": 50,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "styles.css",
+    "author": "CarrotKernel Team",
+    "version": "1.0.0",
+    "description": "Enhanced worldbook tracking and trigger analysis system - See which worldbook entries are activated and why"
+}
