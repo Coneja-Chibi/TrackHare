@@ -6,51 +6,31 @@
 
 import { getRecursionChainRaw, getDeepTriggerInfo } from './trigger-tracking.js';
 import { uiState } from './ui-state.js';
-import { world_info_case_sensitive, world_info_match_whole_words, openWorldInfoEditor, world_names } from '../../../../../scripts/world-info.js';
-import { delay } from '../../../../utils.js';
+import { world_info_case_sensitive, world_info_match_whole_words, openWorldInfoEditor } from '../../../../../scripts/world-info.js';
 
 // =============================================================================
-// WORLDINFO NAVIGATION
+// NAVIGATION HELPERS
 // =============================================================================
 
 /**
- * Open a world info entry in the editor
- * @param {string} worldName The name of the world/lorebook
- * @param {number} uid The entry UID
+ * Open a lorebook and navigate to a specific entry
+ * @param {string} worldName The lorebook name
+ * @param {string} entryName The entry comment/name to search for
  */
-async function openEntryInEditor(worldName, uid) {
-    // First open the world info editor
+function openLorebookEntry(worldName, entryName) {
+    // First open the lorebook
     openWorldInfoEditor(worldName);
 
-    // Wait for the editor to open and render
-    await delay(300);
-
-    // Find the entry element and scroll to it
-    const selector = `#world_popup_entries_list [uid="${uid}"]`;
-
-    // Try to find the entry, might need to wait for pagination
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (attempts < maxAttempts) {
-        const element = document.querySelector(selector);
-        if (element) {
-            // Scroll into view
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            // Flash highlight it
-            $(element).addClass('flash');
-            setTimeout(() => $(element).removeClass('flash'), 2000);
-            return;
+    // Wait for the lorebook to load, then search for the entry
+    setTimeout(() => {
+        const searchInput = document.querySelector('#world_info_search');
+        if (searchInput) {
+            // Set the search value to find the entry
+            searchInput.value = entryName;
+            // Trigger input event to filter
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
-
-        // Entry might be on a different page - try to find and navigate
-        // For now just wait and retry
-        await delay(100);
-        attempts++;
-    }
-
-    console.warn(`[Carrot Compass] Could not find entry ${uid} in ${worldName}`);
+    }, 300); // Give it time to load
 }
 
 // =============================================================================
@@ -205,8 +185,7 @@ function buildRecursionTree() {
             keys: entry.key || [],
             content: entry.content || '',
             originalEntry: entry, // Keep reference for key matching
-            triggeredBy: [], // Will be populated with {name, matchedKey, uid, world}
-            triggersLevel: null, // Will be set if this entry triggers entries in subsequent levels
+            triggeredBy: [], // Will be populated with {name, matchedKey}
         };
 
         nodes.push(node);
@@ -243,16 +222,7 @@ function buildRecursionTree() {
                 name: src.entry.comment || src.entry.key?.[0] || `Entry #${src.entry.uid}`,
                 matchedKey: src.matchedKey,
                 uid: src.entry.uid,
-                world: src.entry.world,
             }));
-
-            // Mark source entries as triggering this level
-            for (const src of triggeringSources) {
-                const sourceNode = nodesByUid.get(src.entry.uid);
-                if (sourceNode && (sourceNode.triggersLevel === null || sourceNode.triggersLevel < currentLevelNum)) {
-                    sourceNode.triggersLevel = currentLevelNum;
-                }
-            }
         }
     }
 
@@ -271,25 +241,12 @@ function buildRecursionTree() {
     // Check if there's any actual recursion (more than just level 0)
     const hasRecursion = levels.length > 1 || (levels.length === 1 && levels[0].level > 0);
 
-    return { levels, hasRecursion, totalEntries: nodes.length };
+    return { levels, hasRecursion, totalEntries: nodes.length, nodesByUid };
 }
 
 // =============================================================================
 // RENDERING
 // =============================================================================
-
-// Color scheme for recursion levels
-const LEVEL_COLORS = {
-    0: '#f97316', // Orange - L0 (Direct)
-    1: '#ec4899', // Bright Pink - L1 Recursion
-    2: '#a855f7', // Purple - L2+ Recursion
-};
-
-function getLevelColor(level) {
-    if (level === 0) return LEVEL_COLORS[0];
-    if (level === 1) return LEVEL_COLORS[1];
-    return LEVEL_COLORS[2];
-}
 
 /**
  * Render the recursion visualizer modal
@@ -317,9 +274,9 @@ export function showRecursionVisualizer() {
             <div class="ck-recursion-modal__body"></div>
             <div class="ck-recursion-modal__footer">
                 <div class="ck-recursion-modal__legend">
-                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: ${LEVEL_COLORS[0]};"></span> L0 (Direct)</span>
-                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: ${LEVEL_COLORS[1]};"></span> L1 Recursion</span>
-                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: ${LEVEL_COLORS[2]};"></span> L2+ Recursion</span>
+                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: var(--ck-primary);"></span> L0 (Direct)</span>
+                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: #8b5cf6;"></span> L1 Recursion</span>
+                    <span class="ck-legend-item"><span class="ck-legend-dot" style="background: #06b6d4;"></span> L2+ Recursion</span>
                 </div>
             </div>
         </div>
@@ -348,7 +305,7 @@ export function showRecursionVisualizer() {
             </div>
             <div class="ck-recursion-level">
                 <div class="ck-recursion-level__entries">
-                    ${level.entries.map(node => renderEntryNode(node)).join('')}
+                    ${level.entries.map(node => renderEntryNode(node, data.nodesByUid)).join('')}
                 </div>
             </div>
         `;
@@ -363,7 +320,7 @@ export function showRecursionVisualizer() {
                 </div>
             </div>
             <div class="ck-recursion-flow">
-                ${data.levels.map((level, idx) => renderLevel(level, idx, data.levels.length)).join('')}
+                ${data.levels.map((level, idx) => renderLevel(level, idx, data.levels.length, data.nodesByUid)).join('')}
             </div>
         `;
     }
@@ -383,28 +340,15 @@ export function showRecursionVisualizer() {
 
     document.body.appendChild(modal);
 
-    // Add click handlers for entry navigation
-    modal.querySelectorAll('.ck-recursion-node--clickable').forEach(node => {
-        node.addEventListener('click', async (e) => {
+    // Add click handlers for opening lorebook entries
+    modal.querySelectorAll('.ck-recursion-node--clickable, .ck-recursion-source--clickable').forEach(el => {
+        el.addEventListener('click', (e) => {
             e.stopPropagation();
-            const world = node.dataset.world;
-            const uid = parseInt(node.dataset.uid, 10);
-            if (world && !isNaN(uid)) {
-                modal.remove();
-                await openEntryInEditor(world, uid);
-            }
-        });
-    });
-
-    // Add click handlers for triggered-by sources
-    modal.querySelectorAll('.ck-recursion-source--clickable').forEach(src => {
-        src.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const world = src.dataset.world;
-            const uid = parseInt(src.dataset.uid, 10);
-            if (world && !isNaN(uid)) {
-                modal.remove();
-                await openEntryInEditor(world, uid);
+            const worldName = el.dataset.world;
+            const entryName = el.dataset.entry;
+            if (worldName && entryName) {
+                modal.remove(); // Close the modal first
+                openLorebookEntry(worldName, entryName);
             }
         });
     });
@@ -413,8 +357,9 @@ export function showRecursionVisualizer() {
 /**
  * Render a recursion level with its entries
  */
-function renderLevel(level, idx, totalLevels) {
-    const levelColor = getLevelColor(level.level);
+function renderLevel(level, idx, totalLevels, nodesByUid) {
+    const levelColor = level.level === 0 ? 'var(--ck-primary)' :
+                       level.level === 1 ? '#8b5cf6' : '#06b6d4';
     const levelName = level.level === 0 ? 'Direct Match' : `Recursion L${level.level}`;
     const showArrow = idx < totalLevels - 1;
 
@@ -426,13 +371,13 @@ function renderLevel(level, idx, totalLevels) {
                 <span class="ck-recursion-level__count">${level.entries.length} ${level.entries.length === 1 ? 'entry' : 'entries'}</span>
             </div>
             <div class="ck-recursion-level__entries">
-                ${level.entries.map(node => renderEntryNode(node)).join('')}
+                ${level.entries.map(node => renderEntryNode(node, nodesByUid)).join('')}
             </div>
         </div>
         ${showArrow ? `
             <div class="ck-recursion-arrow">
-                <span style="color: ${getLevelColor(level.level + 1)};">▼</span>
-                <span class="ck-recursion-arrow__label" style="color: ${getLevelColor(level.level + 1)};">triggered</span>
+                <span>▼</span>
+                <span class="ck-recursion-arrow__label">triggered</span>
             </div>
         ` : ''}
     `;
@@ -441,35 +386,34 @@ function renderLevel(level, idx, totalLevels) {
 /**
  * Render a single entry node
  */
-function renderEntryNode(node) {
-    const levelColor = getLevelColor(node.level);
+function renderEntryNode(node, nodesByUid) {
+    const levelColor = node.level === 0 ? 'var(--ck-primary)' :
+                       node.level === 1 ? '#8b5cf6' : '#06b6d4';
 
-    // Build "triggers L#" badge if this entry triggers further recursion
-    let triggersBadgeHtml = '';
-    if (node.triggersLevel !== null) {
-        const triggersColor = getLevelColor(node.triggersLevel);
-        triggersBadgeHtml = `<span class="ck-recursion-node__triggers-badge" style="background: ${triggersColor};">triggers L${node.triggersLevel}</span>`;
-    }
-
-    // Build triggered-by info for recursed entries (with clickable sources)
+    // Build triggered-by info for recursed entries - make them clickable
     let triggeredByHtml = '';
     if (node.triggeredBy && node.triggeredBy.length > 0) {
-        const sources = node.triggeredBy.map(src =>
-            `<span class="ck-recursion-source ck-recursion-source--clickable" data-world="${escapeHtml(src.world)}" data-uid="${src.uid}">` +
-            `← <strong>${escapeHtml(src.name)}</strong> (key: "${escapeHtml(src.matchedKey)}")</span>`
-        ).join('');
+        const sources = node.triggeredBy.map(src => {
+            // Get the world name from the source node
+            const sourceNode = nodesByUid?.get(src.uid);
+            const worldName = sourceNode?.world || '';
+            return `<span class="ck-recursion-source ck-recursion-source--clickable"
+                          data-world="${escapeHtml(worldName)}"
+                          data-entry="${escapeHtml(src.name)}"
+                          title="Click to open in lorebook">← <strong>${escapeHtml(src.name)}</strong> (key: "${escapeHtml(src.matchedKey)}")</span>`;
+        }).join('');
         triggeredByHtml = `<div class="ck-recursion-node__sources">${sources}</div>`;
     }
 
+    // Make the main entry clickable too
     return `
         <div class="ck-recursion-node ck-recursion-node--flat ck-recursion-node--clickable"
-             data-world="${escapeHtml(node.world)}" data-uid="${node.uid}">
+             data-world="${escapeHtml(node.world)}"
+             data-entry="${escapeHtml(node.name)}"
+             title="Click to open in lorebook">
             <div class="ck-recursion-node__indicator" style="background: ${levelColor};"></div>
             <div class="ck-recursion-node__content">
-                <div class="ck-recursion-node__name">
-                    ${escapeHtml(node.name)}
-                    ${triggersBadgeHtml}
-                </div>
+                <div class="ck-recursion-node__name">${escapeHtml(node.name)}</div>
                 <div class="ck-recursion-node__meta">
                     <span class="ck-recursion-node__world">${escapeHtml(node.world)}</span>
                     ${node.matchedKeyword ? `<span class="ck-recursion-node__keyword">matched: "${escapeHtml(node.matchedKeyword)}"</span>` : ''}
