@@ -1281,3 +1281,407 @@
 .ck-tokenizer-help__item--download {
     color: var(--ck-primary);
 }
+
+/* =============================================================================
+   RECURSION VISUALIZER
+   ============================================================================= */
+
+/* Modal */
+.ck-recursion-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: ck-fade-in 0.2s ease-out;
+}
+
+.ck-recursion-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: var(--ck-blur-light);
+}
+
+.ck-recursion-modal__content {
+    position: relative;
+    width: 90%;
+    max-width: 700px;
+    max-height: 80vh;
+    background: var(--SmartThemeChatTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: var(--ck-radius-lg);
+    box-shadow: var(--ck-shadow-xl);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.ck-recursion-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--ck-spacing-lg) var(--ck-spacing-xl);
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(236, 72, 153, 0.1) 50%, rgba(168, 85, 247, 0.1) 100%);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.ck-recursion-modal__title {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    font-size: var(--ck-text-xl);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+}
+
+.ck-recursion-modal__icon {
+    font-size: 24px;
+}
+
+.ck-recursion-modal__close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--ck-radius-sm);
+    color: var(--SmartThemeBodyColor);
+    font-size: 16px;
+    cursor: pointer;
+    transition: var(--ck-transition-fast);
+}
+
+.ck-recursion-modal__close:hover {
+    background: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.ck-recursion-modal__body {
+    flex: 1;
+    padding: var(--ck-spacing-xl);
+    overflow-y: auto;
+}
+
+.ck-recursion-modal__footer {
+    padding: var(--ck-spacing-md) var(--ck-spacing-xl);
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.ck-recursion-modal__legend {
+    display: flex;
+    gap: var(--ck-spacing-lg);
+    font-size: var(--ck-text-sm);
+    opacity: 0.7;
+}
+
+.ck-legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-xs);
+}
+
+.ck-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+/* Empty & Info States */
+.ck-recursion-empty,
+.ck-recursion-info {
+    text-align: center;
+    padding: var(--ck-spacing-2xl);
+}
+
+.ck-recursion-empty__icon,
+.ck-recursion-info__icon {
+    font-size: 48px;
+    margin-bottom: var(--ck-spacing-md);
+    opacity: 0.5;
+}
+
+.ck-recursion-empty__title {
+    font-size: var(--ck-text-lg);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    margin-bottom: var(--ck-spacing-xs);
+}
+
+.ck-recursion-empty__desc {
+    font-size: var(--ck-text-sm);
+    opacity: 0.6;
+}
+
+.ck-recursion-info {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-md);
+    text-align: left;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--ck-radius-md);
+    padding: var(--ck-spacing-lg);
+    margin-bottom: var(--ck-spacing-lg);
+}
+
+.ck-recursion-info__icon {
+    font-size: 32px;
+    margin: 0;
+}
+
+.ck-recursion-info__text {
+    font-size: var(--ck-text-sm);
+    line-height: 1.5;
+}
+
+/* Tree Structure */
+.ck-recursion-tree {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ck-spacing-xs);
+}
+
+.ck-recursion-node {
+    display: flex;
+    flex-direction: column;
+}
+
+.ck-recursion-node__row {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--ck-radius-sm);
+    transition: var(--ck-transition-fast);
+    cursor: default;
+}
+
+.ck-recursion-node__row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ck-recursion-node--flat {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--ck-radius-sm);
+}
+
+.ck-recursion-node--clickable {
+    cursor: pointer;
+    transition: var(--ck-transition-fast);
+}
+
+.ck-recursion-node--clickable:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(2px);
+}
+
+.ck-recursion-node__toggle {
+    width: 16px;
+    font-size: 10px;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: var(--ck-transition-fast);
+    text-align: center;
+}
+
+.ck-recursion-node--collapsed .ck-recursion-node__toggle {
+    transform: rotate(-90deg);
+}
+
+.ck-recursion-node__spacer {
+    width: 16px;
+}
+
+.ck-recursion-node__indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.ck-recursion-node__content {
+    flex: 1;
+    min-width: 0;
+}
+
+.ck-recursion-node__name {
+    font-size: var(--ck-text-md);
+    font-weight: 500;
+    color: var(--SmartThemeBodyColor);
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    flex-wrap: wrap;
+}
+
+.ck-recursion-node__triggers-badge {
+    font-size: var(--ck-text-xs);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--ck-radius-xs);
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ck-recursion-node__level {
+    font-size: var(--ck-text-xs);
+    font-weight: 600;
+    padding: 2px 6px;
+    background: rgba(236, 72, 153, 0.2);
+    color: #ec4899;
+    border-radius: var(--ck-radius-xs);
+}
+
+.ck-recursion-node[data-level="2"] .ck-recursion-node__level,
+.ck-recursion-node[data-level="3"] .ck-recursion-node__level {
+    background: rgba(168, 85, 247, 0.2);
+    color: #a855f7;
+}
+
+.ck-recursion-node__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    font-size: var(--ck-text-xs);
+    opacity: 0.6;
+    margin-top: 2px;
+}
+
+.ck-recursion-node__world {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px 6px;
+    border-radius: var(--ck-radius-xs);
+}
+
+.ck-recursion-node__keyword {
+    color: #10b981;
+}
+
+.ck-recursion-node__children-count {
+    color: #ec4899;
+    font-weight: 500;
+}
+
+/* Children container with tree lines */
+.ck-recursion-children {
+    margin-left: 28px;
+    padding-left: var(--ck-spacing-md);
+    border-left: 2px solid rgba(236, 72, 153, 0.3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--ck-spacing-xs);
+    margin-top: var(--ck-spacing-xs);
+}
+
+.ck-recursion-node--collapsed .ck-recursion-children {
+    display: none;
+}
+
+/* Level-based flow layout */
+.ck-recursion-flow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ck-spacing-sm);
+}
+
+.ck-recursion-level {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--ck-radius-md);
+    overflow: hidden;
+}
+
+.ck-recursion-level__header {
+    display: flex;
+    align-items: center;
+    gap: var(--ck-spacing-sm);
+    padding: var(--ck-spacing-sm) var(--ck-spacing-md);
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid;
+}
+
+.ck-recursion-level__badge {
+    padding: 2px 8px;
+    border-radius: var(--ck-radius-xs);
+    font-size: var(--ck-text-xs);
+    font-weight: 700;
+    color: white;
+}
+
+.ck-recursion-level__name {
+    font-size: var(--ck-text-sm);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+}
+
+.ck-recursion-level__count {
+    margin-left: auto;
+    font-size: var(--ck-text-xs);
+    opacity: 0.6;
+}
+
+.ck-recursion-level__entries {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--ck-spacing-xs);
+}
+
+.ck-recursion-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--ck-spacing-xs) 0;
+    opacity: 0.5;
+}
+
+.ck-recursion-arrow span:first-child {
+    font-size: 16px;
+}
+
+.ck-recursion-arrow__label {
+    font-size: var(--ck-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Triggered-by sources */
+.ck-recursion-node__sources {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed rgba(236, 72, 153, 0.3);
+}
+
+.ck-recursion-source {
+    font-size: var(--ck-text-xs);
+    color: #ec4899;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ck-recursion-source--clickable {
+    cursor: pointer;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: var(--ck-radius-xs);
+    transition: var(--ck-transition-fast);
+}
+
+.ck-recursion-source--clickable:hover {
+    background: rgba(236, 72, 153, 0.15);
+}
+
+.ck-recursion-source strong {
+    color: var(--SmartThemeBodyColor);
+}
