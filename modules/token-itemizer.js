@@ -646,12 +646,13 @@ function getDisplayName(tag) {
 
 /**
  * Strip all markers from text
+ * Matches our <<TAG>> and <</TAG>> format, including UUID-style identifiers with hyphens
  * @param {string} text
  * @returns {string}
  */
 function stripMarkers(text) {
     if (!text) return text;
-    return text.replace(/<<\/?[A-Z_0-9]+>>/g, '');
+    return text.replace(/<<\/?[A-Z0-9_-]+>>/gi, '');
 }
 
 // =============================================================================
