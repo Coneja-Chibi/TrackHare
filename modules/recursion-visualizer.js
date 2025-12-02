@@ -79,18 +79,32 @@ function findTriggeringSources(sourceEntries, targetEntry) {
     const results = [];
     const keys = targetEntry.key || [];
 
+    if (!keys.length) {
+        console.debug(`[Carrot Compass] findTriggeringSources: target "${targetEntry.comment || targetEntry.uid}" has no keys`);
+        return results;
+    }
+
     for (const sourceEntry of sourceEntries) {
         const content = sourceEntry.content || '';
-        if (!content) continue;
+        if (!content) {
+            console.debug(`[Carrot Compass] findTriggeringSources: source "${sourceEntry.comment || sourceEntry.uid}" has no content`);
+            continue;
+        }
 
         for (const key of keys) {
             if (!key?.trim()) continue;
             if (matchKey(content, key.trim(), targetEntry)) {
+                console.debug(`[Carrot Compass] findTriggeringSources: "${sourceEntry.comment}" content matched key "${key}" for "${targetEntry.comment}"`);
                 results.push({ entry: sourceEntry, matchedKey: key.trim() });
                 break;
             }
         }
     }
+
+    if (results.length === 0) {
+        console.debug(`[Carrot Compass] findTriggeringSources: no matches found for "${targetEntry.comment || targetEntry.uid}" with keys:`, keys);
+    }
+
     return results;
 }
 
