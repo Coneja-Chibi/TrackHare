@@ -927,28 +927,11 @@ function applyPromptManagerPatch() {
 
     // Patch preparePrompt - this is where content gets finalized, so wrap here
     pm.preparePrompt = function(prompt, original = null) {
-        // Log BEFORE calling original - this confirms patch is working
-        console.log('[Carrot Compass] preparePrompt INTERCEPTED:', prompt?.identifier || 'unknown');
-
         // IMPORTANT: Detect macro sources BEFORE calling originalPreparePrompt
         // because substituteParams() will expand the macros and we'll lose the template
         const macroSources = prompt?.content ? detectMacroSources(prompt.content) : new Set();
-        if (macroSources.size > 0) {
-            console.log('[Carrot Compass] Detected macro sources in', prompt?.identifier, ':', Array.from(macroSources));
-        }
 
         const prepared = originalPreparePrompt(prompt, original);
-
-        // Debug: log all prompts passing through
-        console.log('[Carrot Compass] preparePrompt called:', {
-            identifier: prepared?.identifier,
-            name: prepared?.name,
-            hasContent: !!prepared?.content?.trim(),
-            contentLength: prepared?.content?.length || 0,
-            marker: prepared?.marker,
-            markersEnabled,
-            macroSources: Array.from(macroSources),
-        });
 
         // Always store metadata for categorization (even for marker prompts we don't wrap)
         if (prepared?.identifier) {
@@ -974,7 +957,6 @@ function applyPromptManagerPatch() {
         if (markersEnabled && !isDryRun && prepared?.content?.trim() && !prepared.marker) {
             // Wrap content with markers
             prepared.content = wrap(prepared.identifier, prepared.content);
-            console.log('[Carrot Compass] WRAPPED prompt:', prepared.identifier, '→', identifierToName.get(prepared.identifier) || prepared.identifier);
         }
 
         return prepared;
@@ -1288,10 +1270,22 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
  * @param {Object} eventData
  */
 async function processChatCompletion(eventData) {
+    // Skip dry runs (token counting, chat loading, etc.)
     if (eventData.dryRun) return;
 
     const { chat } = eventData;
     if (!chat?.length) return;
+
+    // Strip markers FIRST, before any async operations
+    // This ensures markers are removed even if the rest of the function fails
+    if (markersEnabled) {
+        for (let i = 0; i < chat.length; i++) {
+            const message = chat[i];
+            if (message.content && typeof message.content === 'string') {
+                message.content = stripMarkers(message.content);
+            }
+        }
+    }
 
     // Capture the tokenizer being used for this generation
     originalTokenizer = getCurrentSTTokenizer();
@@ -1435,12 +1429,6 @@ async function processChatCompletion(eventData) {
                     itemization.totalMarkedTokens += tokens;
                 }
             }
-        }
-
-        // ALWAYS strip markers from ALL message content when markers are enabled
-        // This ensures no <<TAG>> markers ever reach the API
-        if (markersEnabled) {
-            message.content = stripMarkers(content);
         }
     }
 
