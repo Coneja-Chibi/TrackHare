@@ -158,6 +158,30 @@ let knownDepthPrompts = {
 };
 
 /**
+ * Shadow copy of wrapped prompts for itemization
+ * We store wrapped versions here for our tracking, but never inject them into ST
+ * Key: sanitized identifier, Value: { identifier, content (wrapped), originalContent, role, name }
+ * @type {Map<string, {identifier: string, content: string, originalContent: string, role: string, name: string}>}
+ */
+let shadowWrappedPrompts = new Map();
+
+/**
+ * Track which sections are expanded in the itemizer UI
+ * Preserved across modal rebuilds (e.g., when toggling breakdown)
+ * Key: section index, Value: true if expanded
+ * @type {Set<number>}
+ */
+let expandedSections = new Set();
+
+/**
+ * Track which categories are collapsed in the itemizer UI
+ * Preserved across modal rebuilds (e.g., when toggling breakdown)
+ * Key: category name, Value: true if collapsed
+ * @type {Set<string>}
+ */
+let collapsedCategories = new Set();
+
+/**
  * Get the current ST tokenizer info (what ST is actually using)
  * @returns {{id: number, name: string}}
  */
@@ -362,13 +386,15 @@ function calculateEffectiveTotals() {
 }
 
 /**
- * Reset exclusions and custom ordering
+ * Reset exclusions, custom ordering, and UI state
  */
 function resetExclusions() {
     excludedSections.clear();
     excludedCategories.clear();
     categoryOrder = null;
     showBudgetBreakdown = false;
+    expandedSections.clear();
+    collapsedCategories.clear();
 }
 
 /**
@@ -925,7 +951,9 @@ function applyPromptManagerPatch() {
         return collection;
     };
 
-    // Patch preparePrompt - this is where content gets finalized, so wrap here
+    // Patch preparePrompt - this is where content gets finalized
+    // We use a SHADOW COPY approach: store wrapped version for our tracking,
+    // but return unwrapped content to ST so markers never reach the API
     pm.preparePrompt = function(prompt, original = null) {
         // IMPORTANT: Detect macro sources BEFORE calling originalPreparePrompt
         // because substituteParams() will expand the macros and we'll lose the template
@@ -951,14 +979,23 @@ function applyPromptManagerPatch() {
                 role: prepared.role,
                 macroSources: macroSources, // Set of source categories detected from macros
             });
+
+            // SHADOW COPY: Store wrapped version for our tracking (if markers enabled and real generation)
+            // The prepared.content stays UNWRAPPED - markers never go to ST/API
+            if (markersEnabled && !isDryRun && prepared?.content?.trim() && !prepared.marker) {
+                const wrappedContent = wrap(prepared.identifier, prepared.content);
+                // Store in our shadow map for itemization
+                shadowWrappedPrompts.set(sanitizedId, {
+                    identifier: prepared.identifier,
+                    content: wrappedContent,
+                    originalContent: prepared.content,
+                    role: prepared.role,
+                    name: displayName,
+                });
+            }
         }
 
-        // Only wrap non-marker prompts that have content (skip during dry runs)
-        if (markersEnabled && !isDryRun && prepared?.content?.trim() && !prepared.marker) {
-            // Wrap content with markers
-            prepared.content = wrap(prepared.identifier, prepared.content);
-        }
-
+        // Return ORIGINAL content - no markers injected into actual prompt
         return prepared;
     };
 
@@ -1276,16 +1313,11 @@ async function processChatCompletion(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
-    // Strip markers FIRST, before any async operations
-    // This ensures markers are removed even if the rest of the function fails
-    if (markersEnabled) {
-        for (let i = 0; i < chat.length; i++) {
-            const message = chat[i];
-            if (message.content && typeof message.content === 'string') {
-                message.content = stripMarkers(message.content);
-            }
-        }
-    }
+    console.log('[Carrot Compass] Processing generation:', chat.length, 'messages, markersEnabled:', markersEnabled);
+    console.debug('[Carrot Compass] Shadow prompts captured:', shadowWrappedPrompts.size);
+
+    // No need to strip markers - we use shadow copy approach
+    // Markers are never injected into actual prompts, only stored in shadowWrappedPrompts
 
     // Capture the tokenizer being used for this generation
     originalTokenizer = getCurrentSTTokenizer();
@@ -1363,40 +1395,13 @@ async function processChatCompletion(eventData) {
         console.debug('[Carrot Compass] Added', entryList.length, 'World Info entries from tracker');
     }
 
-    // Scan all messages for markers, then strip them
-    for (let i = 0; i < chat.length; i++) {
-        const message = chat[i];
-        if (!message.content) continue;
+    // Use shadow wrapped prompts for itemization (no markers in actual chat)
+    // This approach keeps prompts clean while still providing itemization data
+    if (markersEnabled && shadowWrappedPrompts.size > 0) {
+        for (const [sanitizedId, shadowData] of shadowWrappedPrompts) {
+            const { identifier, content, originalContent, role, name } = shadowData;
 
-        const content = typeof message.content === 'string' ? message.content : String(message.content);
-
-        // Check if this is the prefill (last assistant message matching our captured prefill)
-        const isLastMessage = i === chat.length - 1;
-        let isPrefillMessage = false;
-        if (isLastMessage && message.role === 'assistant' && knownDepthPrompts.prefill) {
-            const trimmedContent = content.trim();
-            const prefillMatch = trimmedContent === knownDepthPrompts.prefill ||
-                                 trimmedContent.includes(knownDepthPrompts.prefill) ||
-                                 knownDepthPrompts.prefill.includes(trimmedContent);
-            if (prefillMatch && trimmedContent.length > 0) {
-                const tokens = await countTokens(trimmedContent);
-                itemization.sections.push({
-                    tag: 'PREFILL',
-                    name: 'Start Reply With',
-                    content: trimmedContent,
-                    tokens,
-                    preview: trimmedContent.length > 100 ? trimmedContent.slice(0, 100) + '...' : trimmedContent,
-                    role: 'assistant',
-                    isPrefill: true,
-                });
-                itemization.totalMarkedTokens += tokens;
-                console.debug('[Carrot Compass] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
-                isPrefillMessage = true;
-            }
-        }
-
-        // Parse markers (skip for prefill messages)
-        if (!isPrefillMessage) {
+            // Parse markers from our shadow wrapped content
             const markers = parseMarkers(content);
 
             for (const { tag, content: markerContent } of markers) {
@@ -1407,9 +1412,8 @@ async function processChatCompletion(eventData) {
                 }
 
                 // For CHATHISTORY markers, extract any nested markers (depth-injected prompts)
-                // But skip WI detection since we already have WI from tracker
                 if (tag.startsWith('CHATHISTORY')) {
-                    const extractedSections = await extractNestedContent(markerContent, tag, message.role, countTokens, true);
+                    const extractedSections = await extractNestedContent(markerContent, tag, role, countTokens, true);
                     for (const section of extractedSections) {
                         itemization.sections.push(section);
                         itemization.totalMarkedTokens += section.tokens;
@@ -1423,14 +1427,42 @@ async function processChatCompletion(eventData) {
                         content: markerContent,
                         tokens,
                         preview: markerContent.length > 100 ? markerContent.slice(0, 100) + '...' : markerContent,
-                        role: message.role,
+                        role,
                     });
 
                     itemization.totalMarkedTokens += tokens;
                 }
             }
         }
+        console.debug('[Carrot Compass] Processed', shadowWrappedPrompts.size, 'shadow wrapped prompts');
     }
+
+    // Check for prefill (last assistant message) - this comes from actual chat, not shadow prompts
+    const lastMessage = chat[chat.length - 1];
+    if (lastMessage?.role === 'assistant' && knownDepthPrompts.prefill) {
+        const content = typeof lastMessage.content === 'string' ? lastMessage.content : String(lastMessage.content || '');
+        const trimmedContent = content.trim();
+        const prefillMatch = trimmedContent === knownDepthPrompts.prefill ||
+                             trimmedContent.includes(knownDepthPrompts.prefill) ||
+                             knownDepthPrompts.prefill.includes(trimmedContent);
+        if (prefillMatch && trimmedContent.length > 0) {
+            const tokens = await countTokens(trimmedContent);
+            itemization.sections.push({
+                tag: 'PREFILL',
+                name: 'Start Reply With',
+                content: trimmedContent,
+                tokens,
+                preview: trimmedContent.length > 100 ? trimmedContent.slice(0, 100) + '...' : trimmedContent,
+                role: 'assistant',
+                isPrefill: true,
+            });
+            itemization.totalMarkedTokens += tokens;
+            console.debug('[Carrot Compass] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
+        }
+    }
+
+    // Clear shadow prompts for next generation
+    shadowWrappedPrompts.clear();
 
     lastItemization = itemization;
     resetExclusions(); // Clear any exclusions from previous generation
@@ -1494,6 +1526,7 @@ function onGenerationEnded() {
     restoreExtensionPrompts();
     clearCapturedQuietPrompt();
     isDryRun = false; // Reset dry run state
+    // Shadow prompts are cleared in processChatCompletion after itemization
     // Note: WI entries are managed by uiState.currentEntryList (worldbook tracker)
 }
 
@@ -1871,6 +1904,9 @@ export function initTokenItemizer() {
             console.debug('[Carrot Compass] Dry run detected, skipping marker injection');
             return;
         }
+
+        // Clear shadow prompts from any previous generation
+        shadowWrappedPrompts.clear();
 
         if (!monkeypatchApplied) {
             console.log('[Carrot Compass] Attempting monkeypatch on GENERATION_STARTED...');
@@ -2861,13 +2897,22 @@ export function showTokenItemizer() {
             });
             sectionContent.appendChild(copyBtn);
 
-            // Toggle collapse
-            let collapsed = true;
+            // Toggle collapse - use expandedSections to persist state across rebuilds
+            const isExpanded = expandedSections.has(globalIdx);
+            sectionContent.style.display = isExpanded ? 'block' : 'none';
+            sectionHeader.querySelector('.expand-icon').style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0)';
+            sectionEl.style.background = isExpanded ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)';
+
             sectionHeader.addEventListener('click', () => {
-                collapsed = !collapsed;
-                sectionContent.style.display = collapsed ? 'none' : 'block';
-                sectionHeader.querySelector('.expand-icon').style.transform = collapsed ? 'rotate(0)' : 'rotate(180deg)';
-                sectionEl.style.background = collapsed ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.06)';
+                const nowExpanded = !expandedSections.has(globalIdx);
+                if (nowExpanded) {
+                    expandedSections.add(globalIdx);
+                } else {
+                    expandedSections.delete(globalIdx);
+                }
+                sectionContent.style.display = nowExpanded ? 'block' : 'none';
+                sectionHeader.querySelector('.expand-icon').style.transform = nowExpanded ? 'rotate(180deg)' : 'rotate(0)';
+                sectionEl.style.background = nowExpanded ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)';
             });
 
             sectionEl.appendChild(sectionHeader);
@@ -2877,16 +2922,28 @@ export function showTokenItemizer() {
 
         categorySection.appendChild(sectionsContainer);
 
-        // Category collapse toggle
-        let categoryCollapsed = false;
+        // Category collapse toggle - use collapsedCategories to persist state across rebuilds
+        const isCategoryCollapsed = collapsedCategories.has(categoryName);
+        sectionsContainer.style.display = isCategoryCollapsed ? 'none' : 'flex';
+        const collapseIcon = categoryHeader.querySelector('.category-collapse-icon');
+        if (collapseIcon) {
+            collapseIcon.style.transform = isCategoryCollapsed ? 'rotate(-90deg)' : 'rotate(0)';
+        }
+        categoryHeader.style.marginBottom = isCategoryCollapsed ? '0' : '12px';
+
         categoryHeader.addEventListener('click', () => {
-            categoryCollapsed = !categoryCollapsed;
-            sectionsContainer.style.display = categoryCollapsed ? 'none' : 'flex';
+            const nowCollapsed = !collapsedCategories.has(categoryName);
+            if (nowCollapsed) {
+                collapsedCategories.add(categoryName);
+            } else {
+                collapsedCategories.delete(categoryName);
+            }
+            sectionsContainer.style.display = nowCollapsed ? 'none' : 'flex';
             const icon = categoryHeader.querySelector('.category-collapse-icon');
             if (icon) {
-                icon.style.transform = categoryCollapsed ? 'rotate(-90deg)' : 'rotate(0)';
+                icon.style.transform = nowCollapsed ? 'rotate(-90deg)' : 'rotate(0)';
             }
-            categoryHeader.style.marginBottom = categoryCollapsed ? '0' : '12px';
+            categoryHeader.style.marginBottom = nowCollapsed ? '0' : '12px';
         });
 
         content.appendChild(categorySection);

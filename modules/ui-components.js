@@ -6,6 +6,7 @@ import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { uiState, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, MOVE_THRESHOLD, saveTriggerPosition, saveTriggerSize, loadTriggerPosition, loadTriggerSize } from './ui-state.js';
 import { showTokenItemizer, areMarkersEnabled, enableMarkers, disableMarkers } from './token-itemizer.js';
+import { showRecursionVisualizer } from './recursion-visualizer.js';
 
 // Carrot compass SVG icon
 const CARROT_SVG = `
@@ -116,6 +117,10 @@ export function createConfigPanel() {
     // Token Itemizer button
     const tokenizerRow = createTokenItemizerButton();
     configPanel.appendChild(tokenizerRow);
+
+    // Recursion Visualizer button
+    const recursionRow = createRecursionVisualizerButton();
+    configPanel.appendChild(recursionRow);
 
     return configPanel;
 }
@@ -272,6 +277,40 @@ function createTokenItemizerButton() {
     });
     row.addEventListener('mouseleave', () => {
         row.style.background = 'linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)';
+    });
+
+    return row;
+}
+
+/**
+ * Create recursion visualizer button
+ */
+function createRecursionVisualizerButton() {
+    const row = document.createElement('div');
+    row.classList.add('ck-config-row');
+    row.style.cssText = 'cursor: pointer; transition: background 0.2s; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);';
+
+    const label = document.createElement('span');
+    label.classList.add('ck-config-label');
+    label.textContent = '🔄 Recursion Visualizer';
+
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size: 11px; opacity: 0.7;';
+    hint.textContent = 'View activation chains';
+
+    row.appendChild(label);
+    row.appendChild(hint);
+
+    row.addEventListener('click', () => {
+        showRecursionVisualizer();
+        uiState.configPanel?.classList.remove('ck-config-panel--active');
+    });
+
+    row.addEventListener('mouseenter', () => {
+        row.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)';
+    });
+    row.addEventListener('mouseleave', () => {
+        row.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%)';
     });
 
     return row;

@@ -64,6 +64,10 @@ import {
     getRecursionChainRaw,
     getProbabilityResultsRaw,
 } from './modules/trigger-tracking.js';
+import {
+    showRecursionVisualizer,
+    buildRecursionTree,
+} from './modules/recursion-visualizer.js';
 
 const extensionName = 'Carrot-Compass';
 
@@ -237,6 +241,9 @@ export const CarrotCompass = {
     setTokenizer,
     getSelectedTokenizer,
     AVAILABLE_TOKENIZERS,
+    // Recursion Visualizer
+    showRecursionVisualizer,
+    buildRecursionTree,
     // Debug data access
     get deepTriggerData() { return getDeepTriggerDataRaw(); },
     get recursionChain() { return getRecursionChainRaw(); },
