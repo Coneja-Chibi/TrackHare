@@ -4,6 +4,8 @@
 // =============================================================================
 
 import { event_types, eventSource, extension_prompts, saveSettingsDebounced, main_api, setExtensionPrompt } from '../../../../../script.js';
+// Import as namespace to allow monkeypatching exported functions
+import * as scriptModule from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
 // Import entire module to ensure live binding access
 import * as openai from '../../../../openai.js';
@@ -68,6 +70,24 @@ let originalSetExtensionPrompt = null;
  * @type {boolean}
  */
 let setExtensionPromptPatched = false;
+
+/**
+ * Original generateRaw function (stored for monkeypatch)
+ * @type {Function|null}
+ */
+let originalGenerateRaw = null;
+
+/**
+ * Whether the generateRaw monkeypatch has been applied
+ * @type {boolean}
+ */
+let generateRawPatched = false;
+
+/**
+ * Storage for quiet prompt content captured before it's cleared
+ * @type {string|null}
+ */
+let capturedQuietPrompt = null;
 
 /**
  * Track original extension_prompts values for restoration
@@ -757,6 +777,109 @@ function restoreExtensionPrompts() {
 }
 
 // =============================================================================
+// QUIET PROMPT & RAW PROMPT MONKEYPATCHES
+// =============================================================================
+
+/**
+ * Apply monkeypatch to setExtensionPrompt to catch quiet prompts
+ * Quiet prompts are set then immediately cleared, so we need to capture them at set-time
+ */
+function applySetExtensionPromptPatch() {
+    if (setExtensionPromptPatched) return;
+
+    // Store original function from the module
+    originalSetExtensionPrompt = scriptModule.setExtensionPrompt;
+
+    // Create patched version
+    const patchedSetExtensionPrompt = function(key, value, ...args) {
+        // Capture quiet prompts before they get cleared
+        if (key === 'QUIET_PROMPT' && value?.trim() && markersEnabled && !isDryRun) {
+            capturedQuietPrompt = value;
+            // Wrap the value with our marker
+            value = wrap('QUIET_PROMPT', value);
+            console.debug('[Carrot Compass] Captured quiet prompt');
+        }
+        return originalSetExtensionPrompt.call(this, key, value, ...args);
+    };
+
+    // Apply the patch - reassign in script module
+    // Note: This works because we imported as namespace (import * as scriptModule)
+    try {
+        Object.defineProperty(scriptModule, 'setExtensionPrompt', {
+            value: patchedSetExtensionPrompt,
+            writable: true,
+            configurable: true,
+        });
+        setExtensionPromptPatched = true;
+        console.log('[Carrot Compass] setExtensionPrompt monkeypatch applied');
+    } catch (e) {
+        // ES modules are frozen in strict mode, try window fallback
+        console.warn('[Carrot Compass] Could not patch module export, trying window fallback');
+        if (window.setExtensionPrompt) {
+            window.setExtensionPrompt = patchedSetExtensionPrompt;
+            setExtensionPromptPatched = true;
+            console.log('[Carrot Compass] setExtensionPrompt patched via window');
+        } else {
+            console.error('[Carrot Compass] Failed to patch setExtensionPrompt');
+        }
+    }
+}
+
+/**
+ * Apply monkeypatch to generateRaw to catch raw prompt generation
+ * Raw prompts bypass the normal generation pipeline, so we need to intercept them here
+ */
+function applyGenerateRawPatch() {
+    if (generateRawPatched) return;
+
+    // Store original function from the module
+    originalGenerateRaw = scriptModule.generateRaw;
+
+    if (!originalGenerateRaw) {
+        console.warn('[Carrot Compass] generateRaw not found in script module');
+        return;
+    }
+
+    // Create patched version
+    const patchedGenerateRaw = async function(params = {}) {
+        // Wrap the prompt with our marker if markers are enabled
+        if (markersEnabled && !isDryRun && params.prompt?.trim()) {
+            params.prompt = wrap('RAW_PROMPT', params.prompt);
+            console.debug('[Carrot Compass] Wrapped raw prompt');
+        }
+        return originalGenerateRaw.call(this, params);
+    };
+
+    // Apply the patch
+    try {
+        Object.defineProperty(scriptModule, 'generateRaw', {
+            value: patchedGenerateRaw,
+            writable: true,
+            configurable: true,
+        });
+        generateRawPatched = true;
+        console.log('[Carrot Compass] generateRaw monkeypatch applied');
+    } catch (e) {
+        // ES modules are frozen in strict mode, try window fallback
+        console.warn('[Carrot Compass] Could not patch module export, trying window fallback');
+        if (window.generateRaw) {
+            window.generateRaw = patchedGenerateRaw;
+            generateRawPatched = true;
+            console.log('[Carrot Compass] generateRaw patched via window');
+        } else {
+            console.error('[Carrot Compass] Failed to patch generateRaw');
+        }
+    }
+}
+
+/**
+ * Clear captured quiet prompt after generation
+ */
+function clearCapturedQuietPrompt() {
+    capturedQuietPrompt = null;
+}
+
+// =============================================================================
 // PROMPTMANAGER MONKEYPATCH
 // =============================================================================
 
@@ -1375,6 +1498,7 @@ async function processTextCompletion(eventData) {
  */
 function onGenerationEnded() {
     restoreExtensionPrompts();
+    clearCapturedQuietPrompt();
     isDryRun = false; // Reset dry run state
     // Note: WI entries are managed by uiState.currentEntryList (worldbook tracker)
 }
@@ -1591,6 +1715,16 @@ function categorizeSection(section) {
         return 'Extensions';
     }
 
+    // Quiet prompts - extensions that use quiet generation
+    if (tag === 'QUIET_PROMPT') {
+        return 'Extensions';
+    }
+
+    // Raw prompts - extensions that bypass normal generation pipeline
+    if (tag === 'RAW_PROMPT') {
+        return 'Extensions';
+    }
+
     // Generic extension prompts (EXT_*) - any extension using setExtensionPrompt()
     if (tag.startsWith('EXT_')) {
         return 'Extensions';
@@ -1720,6 +1854,11 @@ export function initTokenItemizer() {
         console.log('[Carrot Compass] Restored markers enabled state from settings');
     }
 
+    // Apply quiet prompt and raw prompt patches immediately
+    // These need to be in place before any generation happens
+    applySetExtensionPromptPatch();
+    applyGenerateRawPatch();
+
     // Try to apply monkeypatch immediately (may fail if promptManager not ready)
     applyPromptManagerPatch();
 
@@ -1814,6 +1953,8 @@ const TAG_COLORS = {
     'VECTHARE': '#8b5cf6',
     'RAG': '#14b8a6',
     'EXAMPLES': '#64748b',
+    'QUIET_PROMPT': '#0ea5e9',  // Sky blue - quiet/background operations
+    'RAW_PROMPT': '#0284c7',    // Darker sky blue - raw direct prompts
 };
 
 /**
