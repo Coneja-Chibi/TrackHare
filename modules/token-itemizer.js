@@ -704,30 +704,41 @@ function injectStoryStringMarkers(data) {
         data.mesExmString = wrap('EXAMPLES', data.mesExmString);
     }
 
-    // Now wrap depth-injected prompts in extension_prompts
-    // These were set by ST just before this event fired
-    // DEPTH_PROMPT = Character Notes (single character)
-    // DEPTH_PROMPT_0, DEPTH_PROMPT_1, etc = Group character notes
+    // Now wrap ALL extension_prompts with markers
+    // This catches everything extensions inject via setExtensionPrompt()
     for (const key of Object.keys(extension_prompts)) {
         const prompt = extension_prompts[key];
         if (!prompt?.value?.trim()) continue;
+        if (originalExtPrompts.has(key)) continue; // Already wrapped
 
-        // Character Depth Prompt (Character Notes)
+        // Store original for restoration
+        originalExtPrompts.set(key, prompt.value);
+
+        // Determine the tag based on the key
+        let tag;
         if (key === 'DEPTH_PROMPT' || key.startsWith('DEPTH_PROMPT_')) {
-            if (!originalExtPrompts.has(key)) {
-                originalExtPrompts.set(key, prompt.value);
-                prompt.value = wrap('CHAR_DEPTH_PROMPT', prompt.value);
-                console.debug('[Carrot Compass] Wrapped Character Notes:', key);
-            }
+            tag = 'CHAR_DEPTH_PROMPT';
+        } else if (key === '2_floating_prompt') {
+            tag = 'AUTHORSNOTE';
+        } else if (key === '1_memory') {
+            tag = 'MEMORY';
+        } else if (key === '3_vectors') {
+            tag = 'VECTORS_CHAT';
+        } else if (key === '4_vectors_data_bank') {
+            tag = 'VECTORS_DATA';
+        } else if (key === 'chromadb') {
+            tag = 'CHROMADB';
+        } else if (key === 'vecthare' || key.startsWith('vecthare_')) {
+            tag = 'VECTHARE';
+        } else if (key === 'carrotkernel_rag') {
+            tag = 'RAG';
+        } else {
+            // Generic extension prompt - use sanitized key as tag
+            tag = `EXT_${key.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
         }
-        // Author's Note (2_floating_prompt)
-        else if (key === '2_floating_prompt') {
-            if (!originalExtPrompts.has(key)) {
-                originalExtPrompts.set(key, prompt.value);
-                prompt.value = wrap('AUTHORSNOTE', prompt.value);
-                console.debug('[Carrot Compass] Wrapped Author\'s Note');
-            }
-        }
+
+        prompt.value = wrap(tag, prompt.value);
+        console.debug('[Carrot Compass] Wrapped extension prompt:', key, '->', tag);
     }
 
     console.debug('[Carrot Compass] Injected story string markers');
@@ -1577,6 +1588,11 @@ function categorizeSection(section) {
 
     // Extension prompt markers we inject
     if (['MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'ANCHOR_BEFORE', 'ANCHOR_AFTER'].includes(tag)) {
+        return 'Extensions';
+    }
+
+    // Generic extension prompts (EXT_*) - any extension using setExtensionPrompt()
+    if (tag.startsWith('EXT_')) {
         return 'Extensions';
     }
 
