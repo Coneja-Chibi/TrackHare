@@ -1,5 +1,6 @@
 // =============================================================================
 // MAIN PANEL - Panel rendering and entry display
+// Matches CarrotKernel style for consistency
 // =============================================================================
 
 import { extension_settings } from '../../../../extensions.js';
@@ -7,7 +8,7 @@ import { delay } from '../../../../utils.js';
 import { uiState } from './ui-state.js';
 import { getEnhancedTriggerDetails, getDeepTriggerInfo } from './trigger-tracking.js';
 import { isVectHareAvailable, getVectHareChunks, renderVectHareSection } from './vecthare-integration.js';
-import { strategy, reasonDisplay, positionNames, reasonDescriptions } from './constants.js';
+import { strategy, positionNames } from './constants.js';
 
 // Re-export for public API
 export { strategy } from './constants.js';
@@ -21,11 +22,11 @@ export function setPositionPanelFn(fn) { positionPanelFn = fn; }
  * Get strategy for an entry
  */
 export function getStrategy(entry) {
-    if (entry.triggerAnalysis?.triggerReason) return entry.triggerAnalysis.triggerReason;
+    if (entry.triggerReason) return entry.triggerReason;
     const deepInfo = getDeepTriggerInfo(entry.uid);
     if (deepInfo?.reason) return deepInfo.reason;
     if (entry.constant) return 'constant';
-    if (entry.vectorized) return 'vectorized';
+    if (entry.vectorized) return 'vector';
     return 'normal';
 }
 
@@ -62,6 +63,42 @@ export async function updateBadge(newEntries) {
 }
 
 /**
+ * Get trigger emoji and reason text
+ */
+function getTriggerDisplay(entry) {
+    const reason = entry.triggerReason || getStrategy(entry);
+
+    const displays = {
+        'constant': { emoji: '🔵', text: 'CONSTANT', color: '#6366f1' },
+        'vector': { emoji: '🧠', text: 'VECTOR/RAG', color: '#8b5cf6' },
+        'forced': { emoji: '⚡', text: 'FORCED', color: 'var(--ck-primary)' },
+        'decorator': { emoji: '⚡', text: 'FORCED', color: 'var(--ck-primary)' },
+        'suppressed': { emoji: '🚫', text: 'SUPPRESSED', color: '#64748b' },
+        'sticky': { emoji: '📌', text: 'STICKY', color: '#ef4444' },
+        'sticky_active': { emoji: '📌', text: 'STICKY', color: '#ef4444' },
+        'persona': { emoji: '🪪', text: 'PERSONA', color: '#d946ef' },
+        'persona_trigger': { emoji: '🪪', text: 'PERSONA', color: '#d946ef' },
+        'character': { emoji: '🎭', text: 'CHARACTER', color: '#f59e0b' },
+        'character_trigger': { emoji: '🎭', text: 'CHARACTER', color: '#f59e0b' },
+        'scenario': { emoji: '🎬', text: 'SCENARIO', color: '#84cc16' },
+        'scenario_trigger': { emoji: '🎬', text: 'SCENARIO', color: '#84cc16' },
+        'authors_note': { emoji: '📝', text: 'AUTHOR\'S NOTE', color: '#8b5cf6' },
+        'system': { emoji: '⚙️', text: 'SYSTEM', color: '#475569' },
+        'secondary_key_match': { emoji: '🔗', text: 'SECONDARY KEYS', color: '#06b6d4' },
+        'secondary_and_any': { emoji: '🔗', text: 'SECONDARY (AND ANY)', color: '#06b6d4' },
+        'secondary_not_all': { emoji: '🔗', text: 'SECONDARY (NOT ALL)', color: '#06b6d4' },
+        'secondary_not_any': { emoji: '🔗', text: 'SECONDARY (NOT ANY)', color: '#06b6d4' },
+        'secondary_and_all': { emoji: '🔗', text: 'SECONDARY (AND ALL)', color: '#06b6d4' },
+        'primary_key_match': { emoji: '🟢', text: 'KEY MATCH', color: '#10b981' },
+        'key_match': { emoji: '🟢', text: 'KEY MATCH', color: '#10b981' },
+        'normal_key_match': { emoji: '🟢', text: 'KEY MATCH', color: '#10b981' },
+        'normal': { emoji: '🟢', text: 'KEY MATCH', color: '#10b981' },
+    };
+
+    return displays[reason] || { emoji: '❓', text: reason?.toUpperCase() || 'UNKNOWN', color: '#64748b' };
+}
+
+/**
  * Main panel update
  */
 export function updatePanel(entryList, newChat = false) {
@@ -95,53 +132,97 @@ export function updatePanel(entryList, newChat = false) {
 }
 
 /**
- * Potato mode - minimal UI
+ * Potato mode - simple, readable list (matches CarrotKernel)
  */
 function renderPotatoMode(panel, entryList) {
     panel.classList.add('ck-potato-mode');
+    panel.style.cssText = `
+        position: fixed;
+        background: var(--SmartThemeBlurTintColor);
+        color: var(--SmartThemeBodyColor);
+        border: 1px solid var(--SmartThemeBorderColor);
+        border-radius: 8px;
+        padding: 12px;
+        max-height: 500px;
+        overflow-y: auto;
+        font-size: 13px;
+        width: 350px;
+    `;
 
     const header = document.createElement('div');
-    header.className = 'ck-potato-header';
-    header.textContent = `🥕 Active Entries (${entryList.length})`;
+    header.textContent = `🧭 Active Entries (${entryList.length})`;
+    header.style.cssText = `
+        font-weight: 600;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--SmartThemeBorderColor);
+        font-size: 14px;
+    `;
     panel.appendChild(header);
 
     const grouped = groupEntries(entryList);
-    const sorted = sortEntries;
 
-    for (const [world, entries] of Object.entries(grouped)) {
-        const worldEl = document.createElement('div');
-        worldEl.className = 'ck-potato-world';
-        worldEl.textContent = `📚 ${world} (${entries.length})`;
-        panel.appendChild(worldEl);
+    for (const [worldName, entries] of Object.entries(grouped)) {
+        const worldHeader = document.createElement('div');
+        worldHeader.textContent = `📚 ${worldName} (${entries.length})`;
+        worldHeader.style.cssText = `
+            font-weight: 600;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            color: var(--SmartThemeQuoteColor);
+            font-size: 12px;
+        `;
+        panel.appendChild(worldHeader);
 
-        sorted(entries).forEach(entry => {
-            const el = document.createElement('div');
-            el.className = 'ck-potato-entry';
-            el.innerHTML = `
-                <div class="ck-potato-entry__title">${entry.comment || 'Untitled'}</div>
-                <div class="ck-potato-entry__meta">${entry.content?.length || 0} chars • depth ${entry.depth || 0}</div>
+        sortEntries(entries).forEach(entry => {
+            const line = document.createElement('div');
+            line.style.cssText = `
+                padding: 6px 8px;
+                margin: 2px 0;
+                background: var(--black30a);
+                border-left: 3px solid var(--SmartThemeQuoteColor);
+                border-radius: 4px;
             `;
-            panel.appendChild(el);
+
+            const title = document.createElement('div');
+            title.textContent = entry.comment || 'Untitled';
+            title.style.cssText = 'font-weight: 500; margin-bottom: 2px;';
+
+            const meta = document.createElement('div');
+            meta.textContent = `${entry.content?.length || 0} chars • depth ${entry.depth || 0}`;
+            meta.style.cssText = 'font-size: 11px; opacity: 0.7;';
+
+            line.appendChild(title);
+            line.appendChild(meta);
+            panel.appendChild(line);
         });
     }
 }
 
 /**
- * Full mode with all features
+ * Full mode with all features (matches CarrotKernel grid/list)
  */
 function renderFullMode(panel, entryList) {
     // Header
     const header = document.createElement('div');
     header.className = 'ck-header';
-    header.innerHTML = `
-        <div class="ck-header__icon">🧭</div>
-        <span class="ck-header__title">Carrot Compass</span>
-        <div class="ck-size-controls"></div>
-        <span class="ck-header__badge">${entryList.length}</span>
-    `;
+
+    const icon = document.createElement('div');
+    icon.className = 'ck-header__icon';
+    icon.textContent = '🧭';
+
+    const title = document.createElement('span');
+    title.className = 'ck-header__title';
+    title.textContent = 'Carrot Compass';
+
+    const badge = document.createElement('span');
+    badge.className = 'ck-header__badge';
+    badge.textContent = entryList.length.toString();
 
     // Size toggle buttons
-    const controls = header.querySelector('.ck-size-controls');
+    const sizeControls = document.createElement('div');
+    sizeControls.className = 'ck-size-controls';
+
     const modes = [
         {
             mode: 'compact',
@@ -157,52 +238,76 @@ function renderFullMode(panel, entryList) {
         },
     ];
 
-    modes.forEach(({ mode, icon, title, cls }) => {
+    const sizeButtons = {};
+    modes.forEach(({ mode, icon: iconSvg, title: btnTitle, cls }) => {
         const btn = document.createElement('button');
         btn.className = 'ck-size-toggle';
-        btn.innerHTML = icon;
-        btn.title = title;
+        btn.innerHTML = iconSvg;
+        btn.title = btnTitle;
         btn.dataset.mode = mode;
-        btn.onclick = (e) => {
+
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
             panel.classList.remove('ck-panel--compact');
-            controls.querySelectorAll('.ck-size-toggle').forEach(b => b.classList.remove('ck-size-toggle--active'));
+            Object.values(sizeButtons).forEach(b => b.classList.remove('ck-size-toggle--active'));
             if (cls) panel.classList.add(cls);
             btn.classList.add('ck-size-toggle--active');
             if (positionPanelFn) setTimeout(positionPanelFn, 100);
-        };
-        if (mode === 'compact') btn.classList.add('ck-size-toggle--active');
-        controls.appendChild(btn);
+        });
+
+        sizeButtons[mode] = btn;
+        sizeControls.appendChild(btn);
     });
 
+    // Default to compact mode
+    sizeButtons.compact.classList.add('ck-size-toggle--active');
     panel.classList.add('ck-panel--compact');
+
+    header.appendChild(icon);
+    header.appendChild(title);
+    header.appendChild(sizeControls);
+    header.appendChild(badge);
     panel.appendChild(header);
 
-    // Content
+    // Content container
     const content = document.createElement('div');
     content.className = 'ck-content';
 
     const grouped = groupEntries(entryList);
-    for (const [world, entries] of Object.entries(grouped)) {
+    for (const [worldName, entries] of Object.entries(grouped)) {
         // World header
         const worldHeader = document.createElement('div');
         worldHeader.className = 'ck-world-header';
-        worldHeader.innerHTML = `
-            <div class="ck-world-header__icon">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-                </svg>
-            </div>
-            <span>${world}</span>
-            <span class="ck-header__badge" style="margin-left: auto;">${entries.length}</span>
+
+        const repoIcon = document.createElement('div');
+        repoIcon.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="color: #ff6b35; opacity: 0.9;">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
         `;
+        worldHeader.appendChild(repoIcon);
+
+        const worldTitle = document.createElement('span');
+        worldTitle.textContent = worldName;
+        worldHeader.appendChild(worldTitle);
+
+        const countBadge = document.createElement('span');
+        countBadge.className = 'ck-header__badge';
+        countBadge.textContent = entries.length.toString();
+        countBadge.style.marginLeft = 'auto';
+        worldHeader.appendChild(countBadge);
+
         content.appendChild(worldHeader);
 
-        // Entries
-        const container = document.createElement('div');
-        container.className = 'ck-entries-container';
-        sortEntries(entries).forEach(entry => container.appendChild(renderEntry(entry)));
-        content.appendChild(container);
+        // Entries container
+        const entriesContainer = document.createElement('div');
+        entriesContainer.className = 'ck-entries-container';
+
+        sortEntries(entries).forEach(entry => {
+            entriesContainer.appendChild(renderEntry(entry));
+        });
+
+        content.appendChild(entriesContainer);
     }
 
     // VectHare section
@@ -238,139 +343,123 @@ function sortEntries(entries) {
 }
 
 /**
- * Render single entry
+ * Render single entry (matches CarrotKernel style)
  */
 function renderEntry(entry) {
-    const el = document.createElement('div');
-    el.className = 'ck-entry';
-    el.dataset.strategy = getStrategy(entry);
+    const entryDiv = document.createElement('div');
+    entryDiv.className = 'ck-entry';
 
-    const details = getEnhancedTriggerDetails(entry);
-    const display = reasonDisplay[details.reason] || reasonDisplay.activated;
+    const entryStrategy = getStrategy(entry);
+    entryDiv.dataset.strategy = entryStrategy;
 
-    let emoji = display.emoji;
-    let reason = display.text;
-    if (details.recursionLevel > 0) {
-        emoji = '🔄' + emoji;
-        reason = `L${details.recursionLevel} → ${reason}`;
-    }
+    const triggerDisplay = getTriggerDisplay(entry);
 
-    // Top row
+    // Top row: Strategy icon + Title + Indicators
     const topRow = document.createElement('div');
     topRow.className = 'ck-entry__top-row';
-    topRow.innerHTML = `
-        <div class="ck-entry__icon">${strategy[el.dataset.strategy] || '❓'}</div>
-        <div class="ck-entry__title">${entry.comment || entry.key?.join(', ') || 'Unnamed'}</div>
-        <div class="ck-entry__indicators">
-            <span class="ck-entry__trigger-indicator" title="${buildTooltip(details, reason)}">${emoji}</span>
-            <span class="ck-entry__trigger-reason">${reason}${details.matchedKeyword ? ` → "${details.matchedKeyword}"` : ''}</span>
-            ${entry.sticky ? `<span class="ck-entry__sticky">📌${entry.sticky}</span>` : ''}
-        </div>
-    `;
-    el.appendChild(topRow);
 
-    // Summary tags
-    const summary = document.createElement('div');
-    summary.className = 'ck-summary';
-    summary.innerHTML = buildTags(entry, details);
-    el.appendChild(summary);
+    // Strategy icon
+    const strategyDiv = document.createElement('div');
+    strategyDiv.className = 'ck-entry__icon';
+    strategyDiv.textContent = strategy[entryStrategy] || strategy.unknown;
+    strategyDiv.title = 'Entry trigger strategy';
+    topRow.appendChild(strategyDiv);
 
-    // Debug container
-    const debug = document.createElement('div');
-    debug.className = 'ck-debug';
-    debug.innerHTML = `<div class="ck-debug__content">${buildDebugContent(entry, details)}</div>`;
-    el.appendChild(debug);
+    // Title
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'ck-entry__title';
+    titleDiv.textContent = entry.comment?.length ? entry.comment : (entry.key?.filter(k => k).join(', ') || 'Unnamed Entry');
+    topRow.appendChild(titleDiv);
 
-    // Click to expand
-    el.onclick = (e) => {
-        e.stopPropagation();
-        const expanded = debug.style.maxHeight && debug.style.maxHeight !== '0px';
-        debug.style.maxHeight = expanded ? '0' : debug.scrollHeight + 'px';
-        el.classList.toggle('ck-entry--expanded', !expanded);
-    };
+    // Indicators container
+    const indicatorsDiv = document.createElement('div');
+    indicatorsDiv.className = 'ck-entry__indicators';
 
-    return el;
-}
+    // Trigger indicator
+    const triggerIndicator = document.createElement('span');
+    triggerIndicator.className = 'ck-entry__trigger-indicator';
+    triggerIndicator.textContent = triggerDisplay.emoji;
+    triggerIndicator.title = `Triggered by: ${triggerDisplay.text}`;
+    indicatorsDiv.appendChild(triggerIndicator);
 
-/**
- * Build tooltip text
- */
-function buildTooltip(details, reason) {
-    let text = `Trigger: ${reason}`;
-    if (details.matchedKeyword) text += `\n🎯 Matched: "${details.matchedKeyword}"`;
-    if (details.primaryKeys?.length) text += `\n🔑 Keys: ${details.primaryKeys.slice(0, 3).join(', ')}`;
-    if (details.recursionLevel > 0) text += `\n🔄 Recursion L${details.recursionLevel}`;
-    return text;
-}
+    // Trigger reason text
+    const triggerReasonText = document.createElement('span');
+    triggerReasonText.className = 'ck-entry__trigger-reason';
+    triggerReasonText.textContent = triggerDisplay.text;
+    indicatorsDiv.appendChild(triggerReasonText);
 
-/**
- * Build summary tags HTML
- */
-function buildTags(entry, details) {
+    // Sticky indicator
+    if (entry.sticky && entry.sticky !== 0) {
+        const stickyDiv = document.createElement('span');
+        stickyDiv.className = 'ck-entry__sticky';
+        stickyDiv.textContent = `📌${entry.sticky}`;
+        stickyDiv.title = entry.sticky > 0
+            ? `Sticky: ${entry.sticky} turns remaining`
+            : `Sticky: Expired ${Math.abs(entry.sticky)} turns ago`;
+        indicatorsDiv.appendChild(stickyDiv);
+    }
+
+    topRow.appendChild(indicatorsDiv);
+    entryDiv.appendChild(topRow);
+
+    // Summary tags bar
+    const summaryBar = document.createElement('div');
+    summaryBar.className = 'ck-summary';
+
     const tags = [];
-    const r = entry.triggerReason;
 
-    if (r && reasonDisplay[r]) {
-        const d = reasonDisplay[r];
-        tags.push(`<span class="ck-summary__tag" style="background:${d.color};color:white;">${d.emoji} ${d.text}</span>`);
+    // Core trigger reason tag
+    tags.push(`<span class="ck-summary__tag" style="background: ${triggerDisplay.color}; color: white;">${triggerDisplay.emoji} ${triggerDisplay.text}</span>`);
+
+    // Key count tag
+    const keyCount = entry.key?.filter(k => k).length || 0;
+    tags.push(`<span class="ck-summary__tag">🔑 ${keyCount}</span>`);
+
+    // Sorting-related tags
+    const sortMethod = extension_settings.CarrotCompass?.sortMethod || 'alpha';
+    if (sortMethod === 'order') {
+        tags.push(`<span class="ck-summary__tag" style="background: #6366f1; color: white;">#${entry.order || 0}</span>`);
+    }
+    if (sortMethod === 'chars') {
+        const charCount = (entry.content || '').length;
+        tags.push(`<span class="ck-summary__tag" style="background: #8b5cf6; color: white;">📝 ${charCount} chars</span>`);
     }
 
-    tags.push(`<span class="ck-summary__tag">🔑 ${entry.key?.length || 0}</span>`);
-
-    const sort = extension_settings.CarrotCompass?.sortMethod;
-    if (sort === 'order') tags.push(`<span class="ck-summary__tag ck-tag--order">#${entry.order || 0}</span>`);
-    if (sort === 'chars') tags.push(`<span class="ck-summary__tag ck-tag--chars">📝 ${(entry.content || '').length}</span>`);
-    if (entry.probability && entry.probability < 100) tags.push(`<span class="ck-summary__tag">🎲 ${entry.probability}%</span>`);
-    if (entry.group) tags.push(`<span class="ck-summary__tag">👥 ${entry.group}</span>`);
-
-    const s = entry.entrySettings;
-    if (s?.recursion?.delayUntilRecursion) tags.push('<span class="ck-summary__tag">⏳ DELAYED</span>');
-    if (s?.recursion?.excludeRecursion) tags.push('<span class="ck-summary__tag">🚫 NO-RECURSE</span>');
-    if (s?.scanning?.scanPersona) tags.push('<span class="ck-summary__tag">🪪 PERSONA</span>');
-    if (s?.scanning?.scanCharacter) tags.push('<span class="ck-summary__tag">🎭 CHAR</span>');
-
-    return tags.join('');
-}
-
-/**
- * Build debug content HTML
- */
-function buildDebugContent(entry, details) {
-    let html = '';
-
-    if (entry.key?.length) {
-        html += `<div class="ck-debug__section">
-            <div class="ck-debug__heading">🔑 TRIGGER KEYS (${entry.key.length})</div>
-            <div class="ck-debug__field">${entry.key.map(k => `<span class="ck-key-tag">${k}</span>`).join('')}</div>
-        </div>`;
+    // Probability tag (if not 100%)
+    if (entry.probability && entry.probability < 100) {
+        tags.push(`<span class="ck-summary__tag">🎲 ${entry.probability}%</span>`);
     }
 
-    if (entry.content) {
-        const preview = entry.content.length > 150 ? entry.content.substring(0, 150) + '...' : entry.content;
-        html += `<div class="ck-debug__section">
-            <div class="ck-debug__heading">📝 CONTENT</div>
-            <div class="ck-debug__field">${preview}</div>
-        </div>`;
+    // Group tag
+    if (entry.group) {
+        tags.push(`<span class="ck-summary__tag">👥 ${entry.group}</span>`);
     }
 
-    const info = [];
-    if (entry.position !== undefined) info.push(`📍 ${getPositionName(entry.position)}`);
-    if (entry.depth !== undefined) info.push(`🏗️ Depth: ${entry.depth}`);
-    if (entry.order !== undefined) info.push(`🔢 Order: ${entry.order}`);
-
-    if (info.length) {
-        html += `<div class="ck-debug__section">
-            <div class="ck-debug__heading">🎯 ACTIVATION</div>
-            <div class="ck-debug__field">${info.join(' • ')}</div>
-        </div>`;
+    // Entry settings tags
+    if (entry.entrySettings) {
+        const settings = entry.entrySettings;
+        if (settings.recursion?.delayUntilRecursion !== undefined && settings.recursion?.delayUntilRecursion !== false) {
+            tags.push(`<span class="ck-summary__tag" title="Delayed until recursion">⏳ DELAYED</span>`);
+        }
+        if (settings.recursion?.excludeRecursion === true) {
+            tags.push(`<span class="ck-summary__tag" title="Excludes recursion">🚫 NO-RECURSE</span>`);
+        }
+        if (settings.scanning?.scanPersona === true) {
+            tags.push(`<span class="ck-summary__tag" title="Scans persona">🪪 PERSONA-SCAN</span>`);
+        }
+        if (settings.scanning?.scanCharacter === true) {
+            tags.push(`<span class="ck-summary__tag" title="Scans character">🎭 CHAR-SCAN</span>`);
+        }
     }
 
-    if (entry.triggerReason && reasonDescriptions[entry.triggerReason]) {
-        html += `<div class="ck-debug__section">
-            <div class="ck-debug__heading">🔬 WHY</div>
-            <div class="ck-debug__field">${entry.triggerReason.toUpperCase()}: ${reasonDescriptions[entry.triggerReason]}</div>
-        </div>`;
-    }
+    summaryBar.innerHTML = tags.join('');
+    entryDiv.appendChild(summaryBar);
 
-    return html;
+    // Click to expand (add debug info)
+    entryDiv.addEventListener('click', (e) => {
+        e.stopPropagation();
+        entryDiv.classList.toggle('ck-entry--expanded');
+    });
+
+    return entryDiv;
 }
