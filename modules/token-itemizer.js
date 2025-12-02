@@ -921,11 +921,10 @@ function findInjectedWIContent(content) {
     const entryList = uiState.currentEntryList || [];
     if (!content || entryList.length === 0) return matches;
 
-    console.debug('[Carrot Compass] Checking content against', entryList.length, 'tracked WI entries');
-
     for (const entry of entryList) {
         // Check if this WI content appears in the message
-        const wiContent = entry.content;
+        // Try multiple sources for the content
+        const wiContent = entry.content || entry.data?.content;
         if (!wiContent) continue;
 
         const index = content.indexOf(wiContent);
@@ -1048,15 +1047,37 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
                     isDepthInjected: true,
                 });
             } else {
-                // Unknown content - keep as chat history
-                sections.push({
-                    tag: parentTag,
-                    name: getDisplayName(parentTag),
-                    content: processedContent,
-                    tokens,
-                    preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
-                    role,
-                });
+                // Check if this is injected WI content that wasn't stripped
+                const wiMatches = findInjectedWIContent(processedContent);
+                if (wiMatches.length > 0) {
+                    // This is WI content - add as World Info entries
+                    for (const match of wiMatches) {
+                        const wiTokens = await countTokens(match.wiEntry.content);
+                        sections.push({
+                            tag: `WI_DEPTH_${match.wiEntry.uid}`,
+                            name: match.wiEntry.comment || 'World Info',
+                            content: match.wiEntry.content,
+                            tokens: wiTokens,
+                            preview: match.wiEntry.content.length > 100 ? match.wiEntry.content.slice(0, 100) + '...' : match.wiEntry.content,
+                            role,
+                            isWorldInfo: true,
+                            isDepthInjected: true,
+                            wiUid: match.wiEntry.uid,
+                            wiWorld: match.wiEntry.world,
+                        });
+                        console.debug('[Carrot Compass] Identified depth-injected WI entry:', match.wiEntry.comment || match.wiEntry.uid);
+                    }
+                } else {
+                    // Unknown content - keep as chat history
+                    sections.push({
+                        tag: parentTag,
+                        name: getDisplayName(parentTag),
+                        content: processedContent,
+                        tokens,
+                        preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
+                        role,
+                    });
+                }
             }
         }
         return sections;
@@ -1544,13 +1565,18 @@ function categorizeSection(section) {
         return 'Preset Prompts';
     }
 
+    // Author's Note - user's personal instructions, categorized under Persona
+    if (tag === 'AUTHORSNOTE' || tag === 'AN') {
+        return 'Persona';
+    }
+
     // Extensions - ST built-in extension prompts
-    if (['SUMMARY', 'AUTHORSNOTE', 'VECTORSMEMORY', 'VECTORSDATABANK', 'SMARTCONTEXT', 'IMPERSONATE', 'GROUPNUDGE'].includes(tag)) {
+    if (['SUMMARY', 'VECTORSMEMORY', 'VECTORSDATABANK', 'SMARTCONTEXT', 'IMPERSONATE', 'GROUPNUDGE'].includes(tag)) {
         return 'Extensions';
     }
 
     // Extension prompt markers we inject
-    if (['AN', 'MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'ANCHOR_BEFORE', 'ANCHOR_AFTER'].includes(tag)) {
+    if (['MEMORY', 'VECTORS_CHAT', 'VECTORS_DATA', 'CHROMADB', 'VECTHARE', 'RAG', 'ANCHOR_BEFORE', 'ANCHOR_AFTER'].includes(tag)) {
         return 'Extensions';
     }
 
