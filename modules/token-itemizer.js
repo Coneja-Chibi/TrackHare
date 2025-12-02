@@ -1687,7 +1687,7 @@ const CATEGORY_COLORS = {
     'Preset Prompts': { bg: '#e05297', icon: '✨' },    // Fuchsia / hot pink
     'Character Card': { bg: '#8b5cf6', icon: '🎭' },    // Vivid violet (distinct from pink)
     'Persona': { bg: '#d946ef', icon: '👤' },           // Magenta / orchid
-    'Extensions': { bg: '#7c3aed', icon: '🔌' },        // Purple
+    'Extensions': { bg: '#1d4ed8', icon: '🔌' },        // Deep vibrant blue
     'Chat History': { bg: '#6366f1', icon: '💬' },      // Indigo
     'System Prompts': { bg: '#ec4899', icon: '⚙️' },    // Pink
     'Example Dialogue': { bg: '#a855f7', icon: '📝' },  // Light purple
@@ -1995,7 +1995,7 @@ export function showTokenItemizer() {
             <span style="font-size: 13px;">${icon}</span>
             <span style="flex: 1; font-size: 12px; font-weight: 500; ${isExcluded ? 'text-decoration: line-through;' : ''}">${name}</span>
             <span style="font-size: 11px; opacity: 0.6;">${data.tokens.toLocaleString()}</span>
-            <span style="font-size: 10px; background: ${color}25; color: ${color}; padding: 2px 5px; border-radius: 3px; font-weight: 600;">${percentOfMax !== null ? percentOfMax : percentOfTotal}%</span>
+            <span style="font-size: 10px; background: ${color}25; color: ${color}; padding: 2px 5px; border-radius: 3px; font-weight: 600;">${percentOfTotal}%</span>
         `;
 
         // Toggle click handler - clicking the swatch toggles exclusion
