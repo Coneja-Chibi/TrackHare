@@ -922,11 +922,20 @@ function identifyDepthPrompt(content) {
     const trimmed = content.trim();
     if (!trimmed) return null;
 
-    // Check for Author's Note - content should match exactly or be contained
+    // Normalize whitespace for comparison (collapse multiple spaces/newlines)
+    const normalize = (str) => str.replace(/\s+/g, ' ').trim().toLowerCase();
+    const normalizedContent = normalize(trimmed);
+
+    // Check for Author's Note
     if (knownDepthPrompts.authorNote) {
-        const anContent = knownDepthPrompts.authorNote;
-        // Check if the content matches Author's Note (allowing for minor whitespace differences)
-        if (trimmed === anContent || trimmed.includes(anContent) || anContent.includes(trimmed)) {
+        const normalizedAN = normalize(knownDepthPrompts.authorNote);
+        // Check exact match, containment, or significant overlap
+        if (normalizedContent === normalizedAN ||
+            normalizedContent.includes(normalizedAN) ||
+            normalizedAN.includes(normalizedContent) ||
+            // Check if first 50 chars match (handles slight variations)
+            (normalizedContent.length > 30 && normalizedAN.length > 30 &&
+             normalizedContent.slice(0, 50) === normalizedAN.slice(0, 50))) {
             console.debug('[Carrot Compass] Identified Author\'s Note in chat history');
             return { tag: 'AUTHORSNOTE', name: 'Author\'s Note' };
         }
@@ -934,9 +943,12 @@ function identifyDepthPrompt(content) {
 
     // Check for Character Depth Prompt (character notes)
     if (knownDepthPrompts.characterDepthPrompt) {
-        const cdpContent = knownDepthPrompts.characterDepthPrompt;
-        // Check if the content matches Character Depth Prompt
-        if (trimmed === cdpContent || trimmed.includes(cdpContent) || cdpContent.includes(trimmed)) {
+        const normalizedCDP = normalize(knownDepthPrompts.characterDepthPrompt);
+        if (normalizedContent === normalizedCDP ||
+            normalizedContent.includes(normalizedCDP) ||
+            normalizedCDP.includes(normalizedContent) ||
+            (normalizedContent.length > 30 && normalizedCDP.length > 30 &&
+             normalizedContent.slice(0, 50) === normalizedCDP.slice(0, 50))) {
             console.debug('[Carrot Compass] Identified Character Depth Prompt in chat history');
             return { tag: 'CHAR_DEPTH_PROMPT', name: 'Character Notes' };
         }
@@ -1096,26 +1108,33 @@ async function processChatCompletion(eventData) {
     const countTokens = context?.getTokenCountAsync || (t => Math.ceil(t.length / 4));
 
     // Capture known depth prompts for later identification in chat history
+    // Use substituteParams to expand macros so we can match the actual content
+    const substituteParams = context?.substituteParams || ((x) => x);
+
     // Author's Note from extension_prompts['2_floating_prompt']
     const authorNotePrompt = context?.extensionPrompts?.['2_floating_prompt'];
-    knownDepthPrompts.authorNote = authorNotePrompt?.value?.trim() || null;
+    const authorNoteRaw = authorNotePrompt?.value?.trim() || null;
+    knownDepthPrompts.authorNote = authorNoteRaw ? substituteParams(authorNoteRaw).trim() : null;
 
     // Character Depth Prompt (character notes) from character data
     const charId = context?.characterId;
     const characters = context?.characters;
     if (charId !== undefined && characters?.[charId]?.data?.extensions?.depth_prompt?.prompt) {
-        knownDepthPrompts.characterDepthPrompt = characters[charId].data.extensions.depth_prompt.prompt.trim();
+        const cdpRaw = characters[charId].data.extensions.depth_prompt.prompt.trim();
+        knownDepthPrompts.characterDepthPrompt = substituteParams(cdpRaw).trim();
     } else {
         knownDepthPrompts.characterDepthPrompt = null;
     }
 
     // Prefill ("Start Reply With") from power_user settings
-    const prefillContent = context?.powerUserSettings?.user_prompt_bias;
-    knownDepthPrompts.prefill = prefillContent?.trim() || null;
+    const prefillRaw = context?.powerUserSettings?.user_prompt_bias?.trim() || null;
+    knownDepthPrompts.prefill = prefillRaw ? substituteParams(prefillRaw).trim() : null;
 
-    console.debug('[Carrot Compass] Captured depth prompts:', {
+    console.debug('[Carrot Compass] Captured depth prompts (after macro substitution):', {
         hasAuthorNote: !!knownDepthPrompts.authorNote,
+        authorNotePreview: knownDepthPrompts.authorNote?.slice(0, 50),
         hasCharDepthPrompt: !!knownDepthPrompts.characterDepthPrompt,
+        charDepthPreview: knownDepthPrompts.characterDepthPrompt?.slice(0, 50),
         hasPrefill: !!knownDepthPrompts.prefill,
     });
 
