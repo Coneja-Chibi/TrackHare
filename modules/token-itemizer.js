@@ -3,7 +3,7 @@
 // Injects <<TAG>>content<</TAG>> markers, parses from final prompt
 // =============================================================================
 
-import { event_types, eventSource, extension_prompts, saveSettingsDebounced, main_api } from '../../../../../script.js';
+import { event_types, eventSource, extension_prompts, saveSettingsDebounced, main_api, setExtensionPrompt } from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
 // Import entire module to ensure live binding access
 import * as openai from '../../../../openai.js';
@@ -56,6 +56,18 @@ let originalGetPromptCollection = null;
  * @type {Function|null}
  */
 let originalPreparePrompt = null;
+
+/**
+ * Original setExtensionPrompt function (stored for monkeypatch)
+ * @type {Function|null}
+ */
+let originalSetExtensionPrompt = null;
+
+/**
+ * Whether the setExtensionPrompt monkeypatch has been applied
+ * @type {boolean}
+ */
+let setExtensionPromptPatched = false;
 
 /**
  * Track original extension_prompts values for restoration
@@ -690,6 +702,32 @@ function injectStoryStringMarkers(data) {
     // Example messages
     if (data.mesExmString?.trim()) {
         data.mesExmString = wrap('EXAMPLES', data.mesExmString);
+    }
+
+    // Now wrap depth-injected prompts in extension_prompts
+    // These were set by ST just before this event fired
+    // DEPTH_PROMPT = Character Notes (single character)
+    // DEPTH_PROMPT_0, DEPTH_PROMPT_1, etc = Group character notes
+    for (const key of Object.keys(extension_prompts)) {
+        const prompt = extension_prompts[key];
+        if (!prompt?.value?.trim()) continue;
+
+        // Character Depth Prompt (Character Notes)
+        if (key === 'DEPTH_PROMPT' || key.startsWith('DEPTH_PROMPT_')) {
+            if (!originalExtPrompts.has(key)) {
+                originalExtPrompts.set(key, prompt.value);
+                prompt.value = wrap('CHAR_DEPTH_PROMPT', prompt.value);
+                console.debug('[Carrot Compass] Wrapped Character Notes:', key);
+            }
+        }
+        // Author's Note (2_floating_prompt)
+        else if (key === '2_floating_prompt') {
+            if (!originalExtPrompts.has(key)) {
+                originalExtPrompts.set(key, prompt.value);
+                prompt.value = wrap('AUTHORSNOTE', prompt.value);
+                console.debug('[Carrot Compass] Wrapped Author\'s Note');
+            }
+        }
     }
 
     console.debug('[Carrot Compass] Injected story string markers');
