@@ -253,16 +253,19 @@ function buildTriggerData() {
     }
 
     // Categorize entries into mutually exclusive groups
-    const triggerers = entries.filter(e => e.triggers.length > 0);
-    const triggererUids = new Set(triggerers.map(e => e.uid));
+    // Both: trigger others AND are triggered by others (chain links)
+    const chainLinks = entries.filter(e => e.triggers.length > 0 && e.triggeredBy.length > 0);
 
-    // Entries that are triggered but don't trigger others
-    const triggeredOnly = entries.filter(e => e.triggeredBy.length > 0 && !triggererUids.has(e.uid));
+    // Trigger only: trigger others but NOT triggered themselves (chain starters)
+    const chainStarters = entries.filter(e => e.triggers.length > 0 && e.triggeredBy.length === 0);
 
-    // Entries that neither trigger nor are triggered (standalone - constants, decorators, etc)
+    // Triggered only: triggered by others but don't trigger anything (chain ends)
+    const chainEnds = entries.filter(e => e.triggeredBy.length > 0 && e.triggers.length === 0);
+
+    // Standalone: no trigger relationships at all
     const standalone = entries.filter(e => e.triggers.length === 0 && e.triggeredBy.length === 0);
 
-    return { entries, triggerers, triggeredOnly, standalone };
+    return { entries, chainStarters, chainLinks, chainEnds, standalone };
 }
 
 // =============================================================================
@@ -441,41 +444,58 @@ export function showRecursionVisualizer() {
             </div>
         `;
     } else {
-        // Group 1: Entries that trigger others (sorted by trigger count desc)
-        const sortedTriggerers = [...data.triggerers].sort((a, b) => b.triggers.length - a.triggers.length);
-        const triggerersHtml = data.triggerers.length > 0 ? `
-            <div class="ck-rv-group">
+        // Group 1: Chain starters - trigger others but aren't triggered
+        const startersHtml = data.chainStarters.length > 0 ? `
+            <div class="ck-rv-group ck-rv-group--starters">
                 <div class="ck-rv-group__header">
-                    <span class="ck-rv-group__icon">→</span>
-                    <span class="ck-rv-group__title">Trigger other entries</span>
-                    <span class="ck-rv-group__count">${data.triggerers.length}</span>
+                    <span class="ck-rv-group__icon">▶</span>
+                    <span class="ck-rv-group__title">Chain starters</span>
+                    <span class="ck-rv-group__desc">trigger others</span>
+                    <span class="ck-rv-group__count">${data.chainStarters.length}</span>
                 </div>
                 <div class="ck-rv-group__list">
-                    ${sortedTriggerers.map(e => renderEntryRow(e, true)).join('')}
+                    ${[...data.chainStarters].sort((a, b) => b.triggers.length - a.triggers.length).map(e => renderEntryRow(e, true)).join('')}
                 </div>
             </div>
         ` : '';
 
-        // Group 2: Entries triggered by others (but don't trigger anything themselves)
-        const triggeredHtml = data.triggeredOnly.length > 0 ? `
-            <div class="ck-rv-group">
+        // Group 2: Chain links - both trigger and are triggered
+        const linksHtml = data.chainLinks.length > 0 ? `
+            <div class="ck-rv-group ck-rv-group--links">
                 <div class="ck-rv-group__header">
-                    <span class="ck-rv-group__icon">←</span>
-                    <span class="ck-rv-group__title">Triggered by other entries</span>
-                    <span class="ck-rv-group__count">${data.triggeredOnly.length}</span>
+                    <span class="ck-rv-group__icon">⇄</span>
+                    <span class="ck-rv-group__title">Chain links</span>
+                    <span class="ck-rv-group__desc">triggered & trigger others</span>
+                    <span class="ck-rv-group__count">${data.chainLinks.length}</span>
                 </div>
                 <div class="ck-rv-group__list">
-                    ${data.triggeredOnly.map(e => renderEntryRow(e, true)).join('')}
+                    ${[...data.chainLinks].sort((a, b) => (b.triggers.length + b.triggeredBy.length) - (a.triggers.length + a.triggeredBy.length)).map(e => renderEntryRow(e, true)).join('')}
                 </div>
             </div>
         ` : '';
 
-        // Group 3: Standalone entries (no trigger relationships)
+        // Group 3: Chain ends - triggered but don't trigger others
+        const endsHtml = data.chainEnds.length > 0 ? `
+            <div class="ck-rv-group ck-rv-group--ends">
+                <div class="ck-rv-group__header">
+                    <span class="ck-rv-group__icon">■</span>
+                    <span class="ck-rv-group__title">Chain ends</span>
+                    <span class="ck-rv-group__desc">triggered by others</span>
+                    <span class="ck-rv-group__count">${data.chainEnds.length}</span>
+                </div>
+                <div class="ck-rv-group__list">
+                    ${[...data.chainEnds].sort((a, b) => b.triggeredBy.length - a.triggeredBy.length).map(e => renderEntryRow(e, true)).join('')}
+                </div>
+            </div>
+        ` : '';
+
+        // Group 4: Standalone - no trigger relationships
         const standaloneHtml = data.standalone.length > 0 ? `
-            <div class="ck-rv-group">
+            <div class="ck-rv-group ck-rv-group--standalone">
                 <div class="ck-rv-group__header">
-                    <span class="ck-rv-group__icon">◆</span>
-                    <span class="ck-rv-group__title">Standalone (no chain)</span>
+                    <span class="ck-rv-group__icon">◇</span>
+                    <span class="ck-rv-group__title">Standalone</span>
+                    <span class="ck-rv-group__desc">no chain relationships</span>
                     <span class="ck-rv-group__count">${data.standalone.length}</span>
                 </div>
                 <div class="ck-rv-group__list">
@@ -484,7 +504,7 @@ export function showRecursionVisualizer() {
             </div>
         ` : '';
 
-        body.innerHTML = triggerersHtml + triggeredHtml + standaloneHtml;
+        body.innerHTML = startersHtml + linksHtml + endsHtml + standaloneHtml;
     }
 
     // Event handlers

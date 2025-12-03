@@ -1438,6 +1438,13 @@
     flex: 1;
 }
 
+.ck-rv-group__desc {
+    font-size: var(--ck-text-xs);
+    color: var(--SmartThemeEmColor);
+    opacity: 0.6;
+    flex: 1;
+}
+
 .ck-rv-group__count {
     background: var(--ck-primary);
     color: white;
@@ -1446,6 +1453,12 @@
     font-size: var(--ck-text-xs);
     font-weight: 600;
 }
+
+/* Group color coding */
+.ck-rv-group--starters .ck-rv-group__header { border-left: 3px solid #10b981; }
+.ck-rv-group--links .ck-rv-group__header { border-left: 3px solid #8b5cf6; }
+.ck-rv-group--ends .ck-rv-group__header { border-left: 3px solid #f59e0b; }
+.ck-rv-group--standalone .ck-rv-group__header { border-left: 3px solid #64748b; }
 
 .ck-rv-group__list {
     display: flex;
