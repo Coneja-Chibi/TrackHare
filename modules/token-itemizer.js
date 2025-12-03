@@ -158,6 +158,25 @@ let knownDepthPrompts = {
 };
 
 /**
+ * Captured prompt collection from getPromptCollection
+ * Maps normalized content -> prompt metadata for content matching
+ * @type {Map<string, {identifier: string, name: string, role: string, system_prompt: boolean, marker: boolean}>}
+ */
+let capturedPromptCollection = new Map();
+
+/**
+ * Original getPromptCollection function
+ * @type {Function|null}
+ */
+let originalGetPromptCollection = null;
+
+/**
+ * Whether getPromptCollection monkeypatch is applied
+ * @type {boolean}
+ */
+let getPromptCollectionPatched = false;
+
+/**
  * Shadow copy of wrapped prompts for itemization
  * We store wrapped versions here for our tracking, but never inject them into ST
  * Key: sanitized identifier, Value: { identifier, content (wrapped), originalContent, role, name }
@@ -931,9 +950,12 @@ function applyPromptManagerPatch() {
     originalGetPromptCollection = pm.getPromptCollection.bind(pm);
     originalPreparePrompt = pm.preparePrompt.bind(pm);
 
-    // Patch getPromptCollection - just capture identifier → name mappings
+    // Patch getPromptCollection - capture prompts with their identifiers and content
     pm.getPromptCollection = function(type) {
         const collection = originalGetPromptCollection(type);
+
+        // Clear previous capture for fresh data
+        capturedPromptCollection.clear();
 
         if (collection?.collection) {
             for (const prompt of collection.collection) {
@@ -945,7 +967,33 @@ function applyPromptManagerPatch() {
                     identifierToName.set(sanitizedId, prompt.name);
                     identifierToName.set(prompt.identifier, prompt.name);
                 }
+
+                // Capture prompt content for later matching
+                // This lets us identify preset prompts by their content when they appear in chat
+                if (prompt.content?.trim()) {
+                    const normalized = prompt.content.replace(/\s+/g, ' ').trim().toLowerCase();
+                    capturedPromptCollection.set(normalized, {
+                        identifier: prompt.identifier,
+                        name: prompt.name || prompt.identifier,
+                        role: prompt.role,
+                        system_prompt: !!prompt.system_prompt,
+                        marker: !!prompt.marker,
+                    });
+                    // Also store a shorter prefix for partial matching
+                    if (normalized.length > 100) {
+                        const prefix = normalized.slice(0, 100);
+                        capturedPromptCollection.set(prefix, {
+                            identifier: prompt.identifier,
+                            name: prompt.name || prompt.identifier,
+                            role: prompt.role,
+                            system_prompt: !!prompt.system_prompt,
+                            marker: !!prompt.marker,
+                            isPrefix: true,
+                        });
+                    }
+                }
             }
+            console.debug('[TrackHare] Captured', capturedPromptCollection.size, 'prompts from getPromptCollection');
         }
 
         return collection;
@@ -1105,9 +1153,9 @@ function findInjectedWIContent(content) {
 
 /**
  * Identify known depth-injected prompts by content matching
- * Compares content against known Author's Note and Character Depth Prompt
+ * Compares content against known Author's Note, Character Depth Prompt, and captured preset prompts
  * @param {string} content - Content to identify
- * @returns {{tag: string, name: string}|null} Identified prompt info or null
+ * @returns {{tag: string, name: string, isPreset?: boolean}|null} Identified prompt info or null
  */
 function identifyDepthPrompt(content) {
     const trimmed = content.trim();
@@ -1142,6 +1190,47 @@ function identifyDepthPrompt(content) {
              normalizedContent.slice(0, 50) === normalizedCDP.slice(0, 50))) {
             console.debug('[TrackHare] Identified Character Depth Prompt in chat history');
             return { tag: 'CHAR_DEPTH_PROMPT', name: 'Character Notes' };
+        }
+    }
+
+    // Check against captured preset prompts from getPromptCollection
+    if (capturedPromptCollection.size > 0) {
+        // Try exact match first
+        if (capturedPromptCollection.has(normalizedContent)) {
+            const prompt = capturedPromptCollection.get(normalizedContent);
+            console.debug('[TrackHare] Identified preset prompt by exact match:', prompt.name);
+            return {
+                tag: sanitizeTag(prompt.identifier),
+                name: prompt.name,
+                isPreset: true,
+            };
+        }
+
+        // Try prefix match (first 100 chars)
+        if (normalizedContent.length > 100) {
+            const prefix = normalizedContent.slice(0, 100);
+            if (capturedPromptCollection.has(prefix)) {
+                const prompt = capturedPromptCollection.get(prefix);
+                console.debug('[TrackHare] Identified preset prompt by prefix match:', prompt.name);
+                return {
+                    tag: sanitizeTag(prompt.identifier),
+                    name: prompt.name,
+                    isPreset: true,
+                };
+            }
+        }
+
+        // Try containment match - check if any captured prompt is contained in this content
+        for (const [capturedNormalized, prompt] of capturedPromptCollection) {
+            if (prompt.isPrefix) continue; // Skip prefix entries for containment check
+            if (capturedNormalized.length > 50 && normalizedContent.includes(capturedNormalized)) {
+                console.debug('[TrackHare] Identified preset prompt by containment:', prompt.name);
+                return {
+                    tag: sanitizeTag(prompt.identifier),
+                    name: prompt.name,
+                    isPreset: true,
+                };
+            }
         }
     }
 
@@ -1199,6 +1288,7 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
                     preview: processedContent.length > 100 ? processedContent.slice(0, 100) + '...' : processedContent,
                     role,
                     isDepthInjected: true,
+                    isPreset: identifiedPrompt.isPreset || false,
                 });
             } else {
                 // Check if this is injected WI content that wasn't stripped
@@ -1689,6 +1779,11 @@ function categorizeSection(section) {
     const tag = section.tag.toUpperCase();
     const name = (section.name || '').toLowerCase();
     const metadata = promptMetadata.get(tag);
+
+    // Check if section was identified as a preset prompt by content matching
+    if (section.isPreset) {
+        return 'Preset Prompts';
+    }
 
     // Character Card - ST system marker prompts that pull from character data
     // These have marker: true and system_prompt: true in ST's preset system
