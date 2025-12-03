@@ -252,11 +252,17 @@ function buildTriggerData() {
         }
     }
 
-    // Separate into triggerers (entries that trigger others) and non-triggerers
+    // Categorize entries into mutually exclusive groups
     const triggerers = entries.filter(e => e.triggers.length > 0);
-    const triggered = entries.filter(e => e.triggeredBy.length > 0);
+    const triggererUids = new Set(triggerers.map(e => e.uid));
 
-    return { entries, triggerers, triggered };
+    // Entries that are triggered but don't trigger others
+    const triggeredOnly = entries.filter(e => e.triggeredBy.length > 0 && !triggererUids.has(e.uid));
+
+    // Entries that neither trigger nor are triggered (standalone - constants, decorators, etc)
+    const standalone = entries.filter(e => e.triggers.length === 0 && e.triggeredBy.length === 0);
+
+    return { entries, triggerers, triggeredOnly, standalone };
 }
 
 // =============================================================================
@@ -435,42 +441,50 @@ export function showRecursionVisualizer() {
             </div>
         `;
     } else {
-        // Group: Entries that trigger others
+        // Group 1: Entries that trigger others (sorted by trigger count desc)
+        const sortedTriggerers = [...data.triggerers].sort((a, b) => b.triggers.length - a.triggers.length);
         const triggerersHtml = data.triggerers.length > 0 ? `
             <div class="ck-rv-group">
                 <div class="ck-rv-group__header">
                     <span class="ck-rv-group__icon">→</span>
-                    <span class="ck-rv-group__title">Entries that trigger others</span>
+                    <span class="ck-rv-group__title">Trigger other entries</span>
                     <span class="ck-rv-group__count">${data.triggerers.length}</span>
                 </div>
                 <div class="ck-rv-group__list">
-                    ${data.triggerers.map(e => renderEntryRow(e, false)).join('')}
+                    ${sortedTriggerers.map(e => renderEntryRow(e, true)).join('')}
                 </div>
             </div>
         ` : '';
 
-        // Group: All fired entries (sorted by triggered count desc)
-        const sortedEntries = [...data.entries].sort((a, b) => {
-            // Triggerers first, then by triggered-by count
-            const aScore = a.triggers.length * 1000 + a.triggeredBy.length;
-            const bScore = b.triggers.length * 1000 + b.triggeredBy.length;
-            return bScore - aScore;
-        });
-
-        const allEntriesHtml = `
+        // Group 2: Entries triggered by others (but don't trigger anything themselves)
+        const triggeredHtml = data.triggeredOnly.length > 0 ? `
             <div class="ck-rv-group">
                 <div class="ck-rv-group__header">
-                    <span class="ck-rv-group__icon">📋</span>
-                    <span class="ck-rv-group__title">All activated entries</span>
-                    <span class="ck-rv-group__count">${data.entries.length}</span>
+                    <span class="ck-rv-group__icon">←</span>
+                    <span class="ck-rv-group__title">Triggered by other entries</span>
+                    <span class="ck-rv-group__count">${data.triggeredOnly.length}</span>
                 </div>
                 <div class="ck-rv-group__list">
-                    ${sortedEntries.map(e => renderEntryRow(e, true)).join('')}
+                    ${data.triggeredOnly.map(e => renderEntryRow(e, true)).join('')}
                 </div>
             </div>
-        `;
+        ` : '';
 
-        body.innerHTML = triggerersHtml + allEntriesHtml;
+        // Group 3: Standalone entries (no trigger relationships)
+        const standaloneHtml = data.standalone.length > 0 ? `
+            <div class="ck-rv-group">
+                <div class="ck-rv-group__header">
+                    <span class="ck-rv-group__icon">◆</span>
+                    <span class="ck-rv-group__title">Standalone (no chain)</span>
+                    <span class="ck-rv-group__count">${data.standalone.length}</span>
+                </div>
+                <div class="ck-rv-group__list">
+                    ${data.standalone.map(e => renderEntryRow(e, false)).join('')}
+                </div>
+            </div>
+        ` : '';
+
+        body.innerHTML = triggerersHtml + triggeredHtml + standaloneHtml;
     }
 
     // Event handlers
