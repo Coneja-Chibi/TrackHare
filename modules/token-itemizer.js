@@ -279,10 +279,10 @@ async function countTokensWithTokenizer(text, tokenizerType = null) {
             if (tok?.needsDownload) {
                 // First call might trigger download - the server auto-downloads if enabled
                 // Give a helpful message either way
-                console.warn('[Carrot Compass] Tokenizer returned empty - may be downloading or disabled');
+                console.warn('[TrackHare] Tokenizer returned empty - may be downloading or disabled');
                 throw new Error(`${tok.name} returned no tokens. It may be downloading (try again in a moment) or downloads may be disabled in ST config.`);
             }
-            console.warn('[Carrot Compass] Tokenizer returned empty array');
+            console.warn('[TrackHare] Tokenizer returned empty array');
             return 0;
         }
         return tokens.length || 0;
@@ -291,7 +291,7 @@ async function countTokensWithTokenizer(text, tokenizerType = null) {
         if (tok?.needsDownload) {
             throw new Error(`${tok.name}: ${error.message || 'Failed'}. If downloading, wait a moment and try again.`);
         }
-        console.warn('[Carrot Compass] Tokenizer error:', error);
+        console.warn('[TrackHare] Tokenizer error:', error);
         throw error;
     }
 }
@@ -304,7 +304,7 @@ async function countTokensWithTokenizer(text, tokenizerType = null) {
 async function recalculateTokenCounts(tokenizerType) {
     if (!lastItemization?.sections) return;
 
-    console.log('[Carrot Compass] Recalculating tokens with tokenizer:', tokenizerType);
+    console.log('[TrackHare] Recalculating tokens with tokenizer:', tokenizerType);
 
     let newTotal = 0;
     for (const section of lastItemization.sections) {
@@ -325,7 +325,7 @@ async function recalculateTokenCounts(tokenizerType) {
     lastItemization.tokenizer = tokenizerType;
     lastItemization.recalculatedAt = Date.now();
 
-    console.log('[Carrot Compass] Recalculated:', lastItemization.sections.length, 'sections,', newTotal, 'total tokens');
+    console.log('[TrackHare] Recalculated:', lastItemization.sections.length, 'sections,', newTotal, 'total tokens');
 }
 
 /**
@@ -335,7 +335,7 @@ async function recalculateTokenCounts(tokenizerType) {
 async function restoreOriginalTokenCounts() {
     if (!lastItemization?.sections) return;
 
-    console.log('[Carrot Compass] Restoring original token counts');
+    console.log('[TrackHare] Restoring original token counts');
 
     for (const section of lastItemization.sections) {
         if (section.originalTokens !== undefined) {
@@ -350,7 +350,7 @@ async function restoreOriginalTokenCounts() {
     lastItemization.tokenizer = null;
     delete lastItemization.recalculatedAt;
 
-    console.log('[Carrot Compass] Restored original counts');
+    console.log('[TrackHare] Restored original counts');
 }
 
 /**
@@ -447,7 +447,7 @@ function getMaxContextSize() {
         // Default fallback
         return 0;
     } catch (e) {
-        console.debug('[Carrot Compass] Could not get max context:', e);
+        console.debug('[TrackHare] Could not get max context:', e);
         return 0;
     }
 }
@@ -702,7 +702,7 @@ function injectExtensionPromptMarkers() {
         }
     }
 
-    console.debug('[Carrot Compass] Injected markers into', originalExtPrompts.size, 'extension prompts');
+    console.debug('[TrackHare] Injected markers into', originalExtPrompts.size, 'extension prompts');
 }
 
 /**
@@ -785,10 +785,10 @@ function injectStoryStringMarkers(data) {
         }
 
         prompt.value = wrap(tag, prompt.value);
-        console.debug('[Carrot Compass] Wrapped extension prompt:', key, '->', tag);
+        console.debug('[TrackHare] Wrapped extension prompt:', key, '->', tag);
     }
 
-    console.debug('[Carrot Compass] Injected story string markers');
+    console.debug('[TrackHare] Injected story string markers');
 }
 
 /**
@@ -824,7 +824,7 @@ function applySetExtensionPromptPatch() {
             capturedQuietPrompt = value;
             // Wrap the value with our marker
             value = wrap('QUIET_PROMPT', value);
-            console.debug('[Carrot Compass] Captured quiet prompt');
+            console.debug('[TrackHare] Captured quiet prompt');
         }
         return originalSetExtensionPrompt.call(this, key, value, ...args);
     };
@@ -838,16 +838,16 @@ function applySetExtensionPromptPatch() {
             configurable: true,
         });
         setExtensionPromptPatched = true;
-        console.log('[Carrot Compass] setExtensionPrompt monkeypatch applied');
+        console.log('[TrackHare] setExtensionPrompt monkeypatch applied');
     } catch (e) {
         // ES modules are frozen in strict mode, try window fallback
-        console.warn('[Carrot Compass] Could not patch module export, trying window fallback');
+        console.warn('[TrackHare] Could not patch module export, trying window fallback');
         if (window.setExtensionPrompt) {
             window.setExtensionPrompt = patchedSetExtensionPrompt;
             setExtensionPromptPatched = true;
-            console.log('[Carrot Compass] setExtensionPrompt patched via window');
+            console.log('[TrackHare] setExtensionPrompt patched via window');
         } else {
-            console.error('[Carrot Compass] Failed to patch setExtensionPrompt');
+            console.error('[TrackHare] Failed to patch setExtensionPrompt');
         }
     }
 }
@@ -863,7 +863,7 @@ function applyGenerateRawPatch() {
     originalGenerateRaw = scriptModule.generateRaw;
 
     if (!originalGenerateRaw) {
-        console.warn('[Carrot Compass] generateRaw not found in script module');
+        console.warn('[TrackHare] generateRaw not found in script module');
         return;
     }
 
@@ -872,7 +872,7 @@ function applyGenerateRawPatch() {
         // Wrap the prompt with our marker if markers are enabled
         if (markersEnabled && !isDryRun && params.prompt?.trim()) {
             params.prompt = wrap('RAW_PROMPT', params.prompt);
-            console.debug('[Carrot Compass] Wrapped raw prompt');
+            console.debug('[TrackHare] Wrapped raw prompt');
         }
         return originalGenerateRaw.call(this, params);
     };
@@ -885,16 +885,16 @@ function applyGenerateRawPatch() {
             configurable: true,
         });
         generateRawPatched = true;
-        console.log('[Carrot Compass] generateRaw monkeypatch applied');
+        console.log('[TrackHare] generateRaw monkeypatch applied');
     } catch (e) {
         // ES modules are frozen in strict mode, try window fallback
-        console.warn('[Carrot Compass] Could not patch module export, trying window fallback');
+        console.warn('[TrackHare] Could not patch module export, trying window fallback');
         if (window.generateRaw) {
             window.generateRaw = patchedGenerateRaw;
             generateRawPatched = true;
-            console.log('[Carrot Compass] generateRaw patched via window');
+            console.log('[TrackHare] generateRaw patched via window');
         } else {
-            console.error('[Carrot Compass] Failed to patch generateRaw');
+            console.error('[TrackHare] Failed to patch generateRaw');
         }
     }
 }
@@ -921,11 +921,11 @@ function applyPromptManagerPatch() {
     const pm = getPromptManager();
     if (!pm) {
         // promptManager might not be initialized yet - retry later
-        console.debug('[Carrot Compass] promptManager not available yet, will retry on GENERATION_STARTED');
+        console.debug('[TrackHare] promptManager not available yet, will retry on GENERATION_STARTED');
         return;
     }
 
-    console.log('[Carrot Compass] promptManager found, applying patches...');
+    console.log('[TrackHare] promptManager found, applying patches...');
 
     // Store original functions
     originalGetPromptCollection = pm.getPromptCollection.bind(pm);
@@ -1000,7 +1000,7 @@ function applyPromptManagerPatch() {
     };
 
     monkeypatchApplied = true;
-    console.log('[Carrot Compass] Applied promptManager monkeypatches (getPromptCollection + preparePrompt)');
+    console.log('[TrackHare] Applied promptManager monkeypatches (getPromptCollection + preparePrompt)');
 }
 
 /**
@@ -1023,7 +1023,7 @@ export function removePromptManagerPatch() {
     }
 
     monkeypatchApplied = false;
-    console.log('[Carrot Compass] Removed promptManager monkeypatches');
+    console.log('[TrackHare] Removed promptManager monkeypatches');
 }
 
 // =============================================================================
@@ -1053,7 +1053,7 @@ function stripWIContentFromChat(content) {
         if (index !== -1) {
             // Remove the WI content
             result = result.slice(0, index) + result.slice(index + entry.content.length);
-            console.debug('[Carrot Compass] Stripped WI entry from chat:', entry.comment || entry.key?.[0] || `#${entry.uid}`);
+            console.debug('[TrackHare] Stripped WI entry from chat:', entry.comment || entry.key?.[0] || `#${entry.uid}`);
         }
     }
 
@@ -1127,7 +1127,7 @@ function identifyDepthPrompt(content) {
             // Check if first 50 chars match (handles slight variations)
             (normalizedContent.length > 30 && normalizedAN.length > 30 &&
              normalizedContent.slice(0, 50) === normalizedAN.slice(0, 50))) {
-            console.debug('[Carrot Compass] Identified Author\'s Note in chat history');
+            console.debug('[TrackHare] Identified Author\'s Note in chat history');
             return { tag: 'AUTHORSNOTE', name: 'Author\'s Note' };
         }
     }
@@ -1140,7 +1140,7 @@ function identifyDepthPrompt(content) {
             normalizedCDP.includes(normalizedContent) ||
             (normalizedContent.length > 30 && normalizedCDP.length > 30 &&
              normalizedContent.slice(0, 50) === normalizedCDP.slice(0, 50))) {
-            console.debug('[Carrot Compass] Identified Character Depth Prompt in chat history');
+            console.debug('[TrackHare] Identified Character Depth Prompt in chat history');
             return { tag: 'CHAR_DEPTH_PROMPT', name: 'Character Notes' };
         }
     }
@@ -1167,7 +1167,7 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
     if (skipWI) {
         processedContent = stripWIContentFromChat(content);
         if (processedContent !== content) {
-            console.debug('[Carrot Compass] Stripped WI content from CHATHISTORY, remaining length:', processedContent.length);
+            console.debug('[TrackHare] Stripped WI content from CHATHISTORY, remaining length:', processedContent.length);
         }
     }
 
@@ -1180,7 +1180,7 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
     const nestedMarkers = parseMarkers(processedContent);
 
     if (nestedMarkers.length > 0) {
-        console.debug('[Carrot Compass] Found', nestedMarkers.length, 'nested markers inside', parentTag, ':', nestedMarkers.map(m => m.tag));
+        console.debug('[TrackHare] Found', nestedMarkers.length, 'nested markers inside', parentTag, ':', nestedMarkers.map(m => m.tag));
     }
 
     if (nestedMarkers.length === 0) {
@@ -1219,7 +1219,7 @@ async function extractNestedContent(content, parentTag, role, countTokens, skipW
                             wiUid: match.wiEntry.uid,
                             wiWorld: match.wiEntry.world,
                         });
-                        console.debug('[Carrot Compass] Identified depth-injected WI entry:', match.wiEntry.comment || match.wiEntry.uid);
+                        console.debug('[TrackHare] Identified depth-injected WI entry:', match.wiEntry.comment || match.wiEntry.uid);
                     }
                 } else {
                     // Unknown content - keep as chat history
@@ -1313,8 +1313,8 @@ async function processChatCompletion(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
-    console.log('[Carrot Compass] Processing generation:', chat.length, 'messages, markersEnabled:', markersEnabled);
-    console.debug('[Carrot Compass] Shadow prompts captured:', shadowWrappedPrompts.size);
+    console.log('[TrackHare] Processing generation:', chat.length, 'messages, markersEnabled:', markersEnabled);
+    console.debug('[TrackHare] Shadow prompts captured:', shadowWrappedPrompts.size);
 
     // No need to strip markers - we use shadow copy approach
     // Markers are never injected into actual prompts, only stored in shadowWrappedPrompts
@@ -1322,7 +1322,7 @@ async function processChatCompletion(eventData) {
     // Capture the tokenizer being used for this generation
     originalTokenizer = getCurrentSTTokenizer();
     selectedTokenizer = null; // Reset to show original
-    console.debug('[Carrot Compass] Captured original tokenizer:', originalTokenizer.name, '(id:', originalTokenizer.id, ')');
+    console.debug('[TrackHare] Captured original tokenizer:', originalTokenizer.name, '(id:', originalTokenizer.id, ')');
 
     const context = getContext();
     const countTokens = context?.getTokenCountAsync || (t => Math.ceil(t.length / 4));
@@ -1350,7 +1350,7 @@ async function processChatCompletion(eventData) {
     const prefillRaw = context?.powerUserSettings?.user_prompt_bias?.trim() || null;
     knownDepthPrompts.prefill = prefillRaw ? substituteParams(prefillRaw).trim() : null;
 
-    console.debug('[Carrot Compass] Captured depth prompts (after macro substitution):', {
+    console.debug('[TrackHare] Captured depth prompts (after macro substitution):', {
         hasAuthorNote: !!knownDepthPrompts.authorNote,
         authorNotePreview: knownDepthPrompts.authorNote?.slice(0, 50),
         hasCharDepthPrompt: !!knownDepthPrompts.characterDepthPrompt,
@@ -1392,7 +1392,7 @@ async function processChatCompletion(eventData) {
     }
 
     if (entryList.length > 0) {
-        console.debug('[Carrot Compass] Added', entryList.length, 'World Info entries from tracker');
+        console.debug('[TrackHare] Added', entryList.length, 'World Info entries from tracker');
     }
 
     // Use shadow wrapped prompts for itemization (no markers in actual chat)
@@ -1407,7 +1407,7 @@ async function processChatCompletion(eventData) {
             for (const { tag, content: markerContent } of markers) {
                 // Skip WORLDINFOBEFORE/WORLDINFOAFTER - we get WI entries directly from tracker
                 if (tag === 'WORLDINFOBEFORE' || tag === 'WORLDINFOAFTER' || tag === 'WI_BEFORE' || tag === 'WI_AFTER') {
-                    console.debug('[Carrot Compass] Skipping', tag, '- WI entries added from tracker');
+                    console.debug('[TrackHare] Skipping', tag, '- WI entries added from tracker');
                     continue;
                 }
 
@@ -1434,7 +1434,7 @@ async function processChatCompletion(eventData) {
                 }
             }
         }
-        console.debug('[Carrot Compass] Processed', shadowWrappedPrompts.size, 'shadow wrapped prompts');
+        console.debug('[TrackHare] Processed', shadowWrappedPrompts.size, 'shadow wrapped prompts');
     }
 
     // Check for prefill (last assistant message) - this comes from actual chat, not shadow prompts
@@ -1457,7 +1457,7 @@ async function processChatCompletion(eventData) {
                 isPrefill: true,
             });
             itemization.totalMarkedTokens += tokens;
-            console.debug('[Carrot Compass] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
+            console.debug('[TrackHare] Identified prefill (Start Reply With):', trimmedContent.slice(0, 50));
         }
     }
 
@@ -1467,8 +1467,8 @@ async function processChatCompletion(eventData) {
     lastItemization = itemization;
     resetExclusions(); // Clear any exclusions from previous generation
 
-    console.debug('[Carrot Compass] Itemization:', itemization.sections.length, 'sections,', itemization.totalMarkedTokens, 'tokens');
-    console.debug('[Carrot Compass] Identifier mappings:', Object.fromEntries(identifierToName));
+    console.debug('[TrackHare] Itemization:', itemization.sections.length, 'sections,', itemization.totalMarkedTokens, 'tokens');
+    console.debug('[TrackHare] Identifier mappings:', Object.fromEntries(identifierToName));
 }
 
 /**
@@ -1516,7 +1516,7 @@ async function processTextCompletion(eventData) {
     lastItemization = itemization;
     resetExclusions(); // Clear any exclusions from previous generation
 
-    console.debug('[Carrot Compass] Text itemization:', itemization.sections.length, 'sections');
+    console.debug('[TrackHare] Text itemization:', itemization.sections.length, 'sections');
 }
 
 /**
@@ -1538,7 +1538,7 @@ function onGenerationEnded() {
 function capturePromptManagerData() {
     const pm = getPromptManager();
     if (!pm) {
-        console.debug('[Carrot Compass] promptManager not available');
+        console.debug('[TrackHare] promptManager not available');
         return;
     }
 
@@ -1546,7 +1546,7 @@ function capturePromptManagerData() {
         // Get token counts per identifier from ST's native system
         const counts = pm.tokenHandler?.counts || {};
 
-        console.debug('[Carrot Compass] Native ST token counts:', counts);
+        console.debug('[TrackHare] Native ST token counts:', counts);
 
         // Get the prompt collection to get content and metadata
         const prompts = [];
@@ -1598,10 +1598,10 @@ function capturePromptManagerData() {
             totalTokens: Object.values(counts).reduce((sum, n) => sum + n, 0),
         };
 
-        console.debug('[Carrot Compass] Captured prompt manager data:', prompts.length, 'prompts,', lastPromptManagerData.totalTokens, 'total tokens');
-        console.debug('[Carrot Compass] Prompts:', prompts.map(p => `${p.identifier}: ${p.tokens}`));
+        console.debug('[TrackHare] Captured prompt manager data:', prompts.length, 'prompts,', lastPromptManagerData.totalTokens, 'total tokens');
+        console.debug('[TrackHare] Prompts:', prompts.map(p => `${p.identifier}: ${p.tokens}`));
     } catch (error) {
-        console.error('[Carrot Compass] Failed to capture prompt manager data:', error);
+        console.error('[TrackHare] Failed to capture prompt manager data:', error);
     }
 }
 
@@ -1626,11 +1626,11 @@ export function hasPromptManagerData() {
 // =============================================================================
 
 /**
- * Ensure CarrotCompass settings object exists
+ * Ensure TrackHare settings object exists
  */
 function ensureSettings() {
-    if (!extension_settings.CarrotCompass) {
-        extension_settings.CarrotCompass = {};
+    if (!extension_settings.TrackHare) {
+        extension_settings.TrackHare = {};
     }
 }
 
@@ -1640,9 +1640,9 @@ function ensureSettings() {
 export function enableMarkers() {
     markersEnabled = true;
     ensureSettings();
-    extension_settings.CarrotCompass.markersEnabled = true;
+    extension_settings.TrackHare.markersEnabled = true;
     saveSettingsDebounced();
-    console.log('[Carrot Compass] Token markers enabled');
+    console.log('[TrackHare] Token markers enabled');
 }
 
 /**
@@ -1652,9 +1652,9 @@ export function disableMarkers() {
     markersEnabled = false;
     restoreExtensionPrompts();
     ensureSettings();
-    extension_settings.CarrotCompass.markersEnabled = false;
+    extension_settings.TrackHare.markersEnabled = false;
     saveSettingsDebounced();
-    console.log('[Carrot Compass] Token markers disabled');
+    console.log('[TrackHare] Token markers disabled');
 }
 
 /**
@@ -1830,7 +1830,7 @@ export function getItemizationSummary() {
     };
 
     // Debug: Log available metadata
-    console.debug('[Carrot Compass] Categorizing with metadata:', Object.fromEntries(promptMetadata));
+    console.debug('[TrackHare] Categorizing with metadata:', Object.fromEntries(promptMetadata));
 
     // Group sections by category
     for (const section of lastItemization.sections) {
@@ -1838,7 +1838,7 @@ export function getItemizationSummary() {
 
         // Debug: Log categorization decision
         const metadata = promptMetadata.get(section.tag.toUpperCase());
-        console.debug(`[Carrot Compass] Categorized "${section.tag}" → "${category}"`, metadata ? `(system_prompt: ${metadata.isSystemPrompt}, marker: ${metadata.isMarker})` : '(no metadata)');
+        console.debug(`[TrackHare] Categorized "${section.tag}" → "${category}"`, metadata ? `(system_prompt: ${metadata.isSystemPrompt}, marker: ${metadata.isMarker})` : '(no metadata)');
 
         if (!summary.categories[category]) {
             summary.categories[category] = {
@@ -1865,7 +1865,7 @@ function retryApplyPatch(attempts = 5, delay = 500) {
     applyPromptManagerPatch();
 
     if (!monkeypatchApplied && attempts > 1) {
-        console.debug(`[Carrot Compass] Retrying monkeypatch in ${delay}ms (${attempts - 1} attempts remaining)`);
+        console.debug(`[TrackHare] Retrying monkeypatch in ${delay}ms (${attempts - 1} attempts remaining)`);
         setTimeout(() => retryApplyPatch(attempts - 1, delay * 2), delay);
     }
 }
@@ -1876,9 +1876,9 @@ function retryApplyPatch(attempts = 5, delay = 500) {
 export function initTokenItemizer() {
     // Load saved marker state from settings
     ensureSettings();
-    if (extension_settings.CarrotCompass.markersEnabled) {
+    if (extension_settings.TrackHare.markersEnabled) {
         markersEnabled = true;
-        console.log('[Carrot Compass] Restored markers enabled state from settings');
+        console.log('[TrackHare] Restored markers enabled state from settings');
     }
 
     // Apply quiet prompt and raw prompt patches immediately
@@ -1901,7 +1901,7 @@ export function initTokenItemizer() {
         // Track dry run state - args can be various formats depending on ST version
         isDryRun = args?.dryRun || args?.dry_run || false;
         if (isDryRun) {
-            console.debug('[Carrot Compass] Dry run detected, skipping marker injection');
+            console.debug('[TrackHare] Dry run detected, skipping marker injection');
             return;
         }
 
@@ -1909,7 +1909,7 @@ export function initTokenItemizer() {
         shadowWrappedPrompts.clear();
 
         if (!monkeypatchApplied) {
-            console.log('[Carrot Compass] Attempting monkeypatch on GENERATION_STARTED...');
+            console.log('[TrackHare] Attempting monkeypatch on GENERATION_STARTED...');
             applyPromptManagerPatch();
         }
         injectExtensionPromptMarkers();
@@ -1918,7 +1918,7 @@ export function initTokenItemizer() {
     // Also try on CHAT_COMPLETION_SETTINGS_READY - this fires when OpenAI settings are loaded
     eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, () => {
         if (!monkeypatchApplied) {
-            console.log('[Carrot Compass] Attempting monkeypatch on CHAT_COMPLETION_SETTINGS_READY...');
+            console.log('[TrackHare] Attempting monkeypatch on CHAT_COMPLETION_SETTINGS_READY...');
             applyPromptManagerPatch();
         }
     });
@@ -1939,7 +1939,7 @@ export function initTokenItemizer() {
     // Clean up
     eventSource.on(event_types.GENERATION_ENDED, onGenerationEnded);
 
-    console.log('[Carrot Compass] Token itemizer initialized');
+    console.log('[TrackHare] Token itemizer initialized');
 }
 
 // =============================================================================
@@ -1992,7 +1992,7 @@ const TAG_COLORS = {
  */
 export function showTokenItemizer() {
     if (!lastItemization || lastItemization.sections.length === 0) {
-        toastr.info('No itemization data yet. Enable markers and send a message first!', 'Carrot Compass');
+        toastr.info('No itemization data yet. Enable markers and send a message first!', 'TrackHare');
         return;
     }
 
@@ -2475,13 +2475,13 @@ export function showTokenItemizer() {
             modal.remove();
             showTokenItemizer();
         } catch (error) {
-            console.error('[Carrot Compass] Failed to recalculate tokens:', error);
+            console.error('[TrackHare] Failed to recalculate tokens:', error);
             tokenizerSelect.disabled = false;
             currentTokenizerDisplay.innerHTML = `
                 <div class="ck-tokenizer-current__name" style="color: #ef4444;">Error</div>
                 <div class="ck-tokenizer-current__status">${error.message}</div>
             `;
-            toastr.error('Failed to recalculate: ' + error.message, 'Carrot Compass');
+            toastr.error('Failed to recalculate: ' + error.message, 'TrackHare');
         }
     });
 
@@ -3005,7 +3005,7 @@ export function showTokenItemizer() {
         a.download = `${prefix}-${Date.now()}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
-        toastr.success('Exported!', 'Carrot Compass');
+        toastr.success('Exported!', 'TrackHare');
     };
 
     // Copy JSON button
@@ -3015,7 +3015,7 @@ export function showTokenItemizer() {
     copyJsonBtn.style.cssText = buttonStyle;
     copyJsonBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(JSON.stringify(lastItemization, null, 2)).then(() => {
-            toastr.success('JSON copied to clipboard!', 'Carrot Compass');
+            toastr.success('JSON copied to clipboard!', 'TrackHare');
         });
     });
 
@@ -3026,7 +3026,7 @@ export function showTokenItemizer() {
     copyRawBtn.style.cssText = buttonStyle;
     copyRawBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(getRawPromptFromItemization()).then(() => {
-            toastr.success('Raw prompt copied!', 'Carrot Compass');
+            toastr.success('Raw prompt copied!', 'TrackHare');
         });
     });
 

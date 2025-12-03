@@ -56,7 +56,7 @@ function startLogCapture() {
         originalConsoleDebug.apply(console, args);
     };
 
-    console.debug('[Carrot Compass] Log capture started');
+    console.debug('[TrackHare] Log capture started');
 }
 
 /**
@@ -72,7 +72,7 @@ function processWILog(args) {
         if (!entriesByLoop.has(currentLoop)) {
             entriesByLoop.set(currentLoop, new Set());
         }
-        console.debug(`[Carrot Compass] Detected loop #${currentLoop}`);
+        console.debug(`[TrackHare] Detected loop #${currentLoop}`);
         return;
     }
 
@@ -126,7 +126,7 @@ function processWILog(args) {
             triggeredBy: prevLoopUids,
         });
 
-        console.debug(`[Carrot Compass] Entry ${uid} activated at L${level} (loop ${currentLoop}), reason: ${reason}`);
+        console.debug(`[TrackHare] Entry ${uid} activated at L${level} (loop ${currentLoop}), reason: ${reason}`);
     }
 }
 
@@ -142,7 +142,7 @@ function stopLogCapture() {
     }
     isCapturing = false;
 
-    console.debug(`[Carrot Compass] Capture stopped. Found entries in ${entriesByLoop.size} loops:`);
+    console.debug(`[TrackHare] Capture stopped. Found entries in ${entriesByLoop.size} loops:`);
     for (const [loop, uids] of entriesByLoop) {
         console.debug(`  Loop ${loop} (L${loop - 1}): ${uids.size} entries`);
     }
@@ -424,5 +424,5 @@ export function getEntriesByLoop() {
 export function initTriggerTracking() {
     setupScanDoneTracking();
     setupGenerationTracking();
-    console.log('[Carrot Compass] Trigger tracking initialized (aggressive log parsing mode)');
+    console.log('[TrackHare] Trigger tracking initialized (aggressive log parsing mode)');
 }

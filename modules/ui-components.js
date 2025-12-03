@@ -21,7 +21,7 @@ const CARROT_SVG = `
 export function createTriggerButton() {
     const trigger = document.createElement('div');
     trigger.classList.add('ck-trigger');
-    trigger.title = '🧭 Carrot Compass\n---\nright click for options';
+    trigger.title = '🧭 TrackHare\n---\nright click for options';
     trigger.innerHTML = CARROT_SVG;
 
     // Load saved position
@@ -69,14 +69,14 @@ export function createConfigPanel() {
     configPanel.classList.add('ck-config-panel');
 
     // Initialize settings
-    if (!extension_settings.CarrotCompass) {
-        extension_settings.CarrotCompass = {};
+    if (!extension_settings.TrackHare) {
+        extension_settings.TrackHare = {};
     }
 
     // Header
     const header = document.createElement('div');
     header.classList.add('ck-config-header');
-    header.innerHTML = '🧭 <span>Carrot Compass Settings</span>';
+    header.innerHTML = '🧭 <span>TrackHare Settings</span>';
     configPanel.appendChild(header);
 
     // Settings rows
@@ -140,14 +140,14 @@ function createSettingRow(label, key, defaultVal, description) {
     const toggle = document.createElement('div');
     toggle.classList.add('ck-toggle');
 
-    const currentValue = extension_settings.CarrotCompass?.[key] ?? defaultVal;
+    const currentValue = extension_settings.TrackHare?.[key] ?? defaultVal;
     if (currentValue) {
         toggle.classList.add('ck-toggle--active');
     }
 
     toggle.addEventListener('click', () => {
-        const newValue = !extension_settings.CarrotCompass[key];
-        extension_settings.CarrotCompass[key] = newValue;
+        const newValue = !extension_settings.TrackHare[key];
+        extension_settings.TrackHare[key] = newValue;
         toggle.classList.toggle('ck-toggle--active', newValue);
         saveSettingsDebounced();
     });
@@ -175,10 +175,10 @@ function createSortDropdown() {
         <option value="order">Insertion Order</option>
         <option value="chars">Character Count</option>
     `;
-    select.value = extension_settings.CarrotCompass?.sortMethod || 'alpha';
+    select.value = extension_settings.TrackHare?.sortMethod || 'alpha';
 
     select.addEventListener('change', () => {
-        extension_settings.CarrotCompass.sortMethod = select.value;
+        extension_settings.TrackHare.sortMethod = select.value;
         saveSettingsDebounced();
     });
 

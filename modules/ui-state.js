@@ -1,5 +1,5 @@
 // =============================================================================
-// UI STATE - Shared state for Carrot Compass UI components
+// UI STATE - Shared state for TrackHare UI components
 // =============================================================================
 
 /**

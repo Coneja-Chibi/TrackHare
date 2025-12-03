@@ -42,7 +42,7 @@ export function getVectHareDebugData() {
             lastVectHareDebug = window.VectHare_DebugData;
         }
     } catch (e) {
-        console.debug('[Carrot Compass] VectHare debug data not available:', e);
+        console.debug('[TrackHare] VectHare debug data not available:', e);
     }
     return lastVectHareDebug;
 }
@@ -122,7 +122,7 @@ function captureVectHareData() {
     // Capture current VectHare state
     if (window.VectHare_LastSearch) {
         lastVectHareSearch = { ...window.VectHare_LastSearch };
-        console.debug('[Carrot Compass] Captured VectHare search data:', {
+        console.debug('[TrackHare] Captured VectHare search data:', {
             chunkCount: lastVectHareSearch.chunks?.length || 0,
             query: lastVectHareSearch.query?.substring(0, 50) + '...',
         });
@@ -139,7 +139,7 @@ export function initVectHareIntegration() {
         setTimeout(captureVectHareData, 100);
     });
 
-    console.log('[Carrot Compass] VectHare integration initialized');
+    console.log('[TrackHare] VectHare integration initialized');
 }
 
 /**

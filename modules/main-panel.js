@@ -124,7 +124,7 @@ export function updatePanel(entryList, newChat = false) {
         return;
     }
 
-    if (extension_settings.CarrotCompass?.potatoMode) {
+    if (extension_settings.TrackHare?.potatoMode) {
         renderPotatoMode(panel, entryList);
     } else {
         renderFullMode(panel, entryList);
@@ -213,7 +213,7 @@ function renderFullMode(panel, entryList) {
 
     const title = document.createElement('span');
     title.className = 'ck-header__title';
-    title.textContent = 'Carrot Compass';
+    title.textContent = 'TrackHare';
 
     const badge = document.createElement('span');
     badge.className = 'ck-header__badge';
@@ -320,7 +320,7 @@ function renderFullMode(panel, entryList) {
  * Group entries by world
  */
 function groupEntries(entryList) {
-    if (!(extension_settings.CarrotCompass?.worldBookGroup ?? true)) {
+    if (!(extension_settings.TrackHare?.worldBookGroup ?? true)) {
         return { 'All Entries': entryList };
     }
     return entryList.reduce((acc, e) => {
@@ -334,7 +334,7 @@ function groupEntries(entryList) {
  * Sort entries by preference
  */
 function sortEntries(entries) {
-    const method = extension_settings.CarrotCompass?.sortMethod || 'alpha';
+    const method = extension_settings.TrackHare?.sortMethod || 'alpha';
     return [...entries].sort((a, b) => {
         if (method === 'chars') return (a.content?.length || 0) - (b.content?.length || 0);
         if (method === 'order') return (a.order || 0) - (b.order || 0);
@@ -416,7 +416,7 @@ function renderEntry(entry) {
     tags.push(`<span class="ck-summary__tag">🔑 ${keyCount}</span>`);
 
     // Sorting-related tags
-    const sortMethod = extension_settings.CarrotCompass?.sortMethod || 'alpha';
+    const sortMethod = extension_settings.TrackHare?.sortMethod || 'alpha';
     if (sortMethod === 'order') {
         tags.push(`<span class="ck-summary__tag" style="background: #6366f1; color: white;">#${entry.order || 0}</span>`);
     }

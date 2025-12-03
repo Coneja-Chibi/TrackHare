@@ -1,5 +1,5 @@
 // =============================================================================
-// CARROT COMPASS 🧭
+// TRACKHARE 🧭
 // Enhanced worldbook tracking and trigger analysis system
 // =============================================================================
 
@@ -149,7 +149,7 @@ function setupEventListeners() {
 }
 
 /**
- * Initialize Carrot Compass
+ * Initialize TrackHare
  */
 async function init() {
     console.log(`[${extensionName}] Initializing...`);
@@ -205,7 +205,7 @@ jQuery(async () => {
 });
 
 // Public API
-export const CarrotCompass = {
+export const TrackHare = {
     init,
     enable,
     disable,
